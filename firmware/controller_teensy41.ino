@@ -14,7 +14,6 @@
 #include <PacketSerial.h>
 
 // Class constructors and supporting global variables/definitions for the different modules we want
-// TODO: Move #defines to a separate file to support different hardware configs
 
 // Closed loop control: Use bang-bang to get fluid into the reservior (positive) and bang-bang / PID to get fluid out (negative)
 // Need different params for input vs output due to fluidics topology
@@ -26,48 +25,21 @@ AutoBangBang fluid_out_bb(&global_flowrate_reading, &global_power_out, -1);
 AutoPID fluid_out_pid(&global_flowrate_reading, &global_pid_setpoint, &global_power_out, -1);
 
 // NXP33996 - valve controller
-//#define VALVES_RST 10
-//#define VALVES_CS   2
-//#define VALVES_PWM  3
 NXP33996 valves;
 
 // OPX350 - bubble sensors
-//#define FLUIDSENSORFRONT_A 27
-//#define FLUIDSENSORFRONT_B 26
-//#define FLUIDSENSORFRONT_C 31
-//
-//#define FLUIDSENSORBACK_A  28
-//#define FLUIDSENSORBACK_B  28
-//#define FLUIDSENSORBACK_C  30
 OPX350 fluidsensor_front, fluidsensor_back;
 
 // Selector valves
-//#define SELECTORVALVE_WIRE Wire
-//#define SELECTORVALVE_MAX  5     // Support up to 5 valves
-//#define SELECTORVALVE_QTY  2     // Only 2 are actually installed here
-//const uint8_t SELECTORVALVE_ADDRS[] = {0x1E, 0x0E, 0x00, 0x00, 0x00}; // 0x00 is dummy address
 RheoLink selectorvalves[SELECTORVALVE_QTY];
 
 // SLF3X flowrate sensor
-//#define SLF3X_WIRE0   Wire
-//#define SLF3X_WIRE1   Wire1
-//#define SLF3X_WIRE2   Wire2
-//#define PERFORM_CRC  true
 SLF3X flowsensor;
 
 // SSCX pressure sensors
-//#define SSCX_SPI     SPI
-//#define SSCX_MAX      4 // Support up to 4 pressure sensors
-//#define SSCX_QTY      2 // Only 2 are installed here
-//const uint8_t PRESSURE_CS[] = {37, 36, 35, 34}; // Only index 0 and 1 are populated on most boards
 SSCX pressuresensors[SSCX_QTY];
 
 // TTP Disc Pump
-//#define TTP_UART             Serial3
-//#define TTP_SELECTED_MODE    TTP_MODE_MANUAL
-//#define TTP_SELECTED_STREAM  TTP_STREAM_DISABLE
-//#define TTP_SELECTED_SRC     TTP_SRC_SETVAL
-//#define TTP_PWR_LIM_mW       TTP_MAX_PWR
 TTP discpump;
 
 // PacketSerial
@@ -205,9 +177,9 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
     return;
   }
   // Get the received command
-  cmd_rxed = buffer[0];
+  cmd_rxed = buffer[2];
   // Get the cmd uid
-  cmd_uid = (buffer[1] << 8) + buffer[2];
+  cmd_uid = (buffer[0] << 8) + buffer[1];
   switch (cmd_rxed) {
     case CLEAR: {
         // Stop all operations
@@ -235,8 +207,8 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
     case INITIALIZE_DISC_PUMP: {
         // Ensure the correct amount of data was sent
         // If we don't see exactly 8 bytes, don't do anything
-        // 3 bytes for cmd and UID, 5 for initializing the pump
-        if (size !=  8) {
+        // 3 bytes for cmd and UID, 2 for initializing the pump
+        if (size !=  5) {
           state = INTERNAL_STATE_IDLE;
           execution_status = CMD_INVALID;
           return;
@@ -247,12 +219,9 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         fluid_out_pid.stop();
         // Initialize variables
         int16_t pwr_lim = int16_t((buffer[3] << 8) + buffer[4]);
-        uint8_t src = buffer[5];
-        uint8_t mode = buffer[6];
-        uint8_t stream = buffer[7];
         // Begin initialization
         discpump.begin(TTP_UART);
-        bool result = discpump.init(pwr_lim, src, mode, stream);
+        bool result = discpump.init(pwr_lim, TTP_SELECTED_SRC, TTP_SELECTED_MODE, TTP_SELECTED_STREAM);
         // Ensure disc pump is not enabled
         discpump.set_target(0);
         discpump.enable(false);
@@ -261,7 +230,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           execution_status = COMPLETED_WITHOUT_ERRORS;
         }
         else {
-          execution_status = COMPLETED_WITHOUT_ERRORS;
+          execution_status = CMD_EXECUTION_ERROR;
         }
         state = INTERNAL_STATE_IDLE;
       }
@@ -291,7 +260,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           execution_status = COMPLETED_WITHOUT_ERRORS;
         }
         else {
-          execution_status = COMPLETED_WITHOUT_ERRORS;
+          execution_status = CMD_EXECUTION_ERROR;
         }
         state = INTERNAL_STATE_IDLE;
       }
@@ -309,6 +278,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         uint8_t medium = buffer[4];
         bool do_crc = buffer[5];
         bool result;
+
         if (buffer[3] == 0) {
           result = flowsensor.begin(SLF3X_WIRE0, medium, do_crc);
         }
@@ -328,7 +298,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           execution_status = COMPLETED_WITHOUT_ERRORS;
         }
         else {
-          execution_status = COMPLETED_WITHOUT_ERRORS;
+          execution_status = CMD_EXECUTION_ERROR;
         }
         state = INTERNAL_STATE_IDLE;
       }
@@ -352,7 +322,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           execution_status = COMPLETED_WITHOUT_ERRORS;
         }
         else {
-          execution_status = COMPLETED_WITHOUT_ERRORS;
+          execution_status = CMD_EXECUTION_ERROR;
         }
         state = INTERNAL_STATE_IDLE;
       }
@@ -371,31 +341,81 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
       }
       break;
 
-    case INITIALIZE_BANG_BANG_PARAMETERS: {
+    case INITIALIZE_ROTARY: {
         // Ensure the correct amount of data was sent
-        // If we don't see exactly 15 bytes, don't do anything
-        // 3 bytes for cmd and UID, 12 for initializing the controller
+        // If we don't see exactly 5 bytes, don't do anything
+        // 3 bytes for cmd and UID, 2 for I2C address and max
+        if (size != 5) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        // Ensure we are trying to initialize a pump that exists
+        uint8_t idx = buffer[3];
+        if (idx >= SELECTORVALVE_QTY) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        // Begin initialization
+        uint8_t addr = SELECTORVALVE_ADDRS[idx];
+        uint8_t max_pos = buffer[4];
+        uint8_t result = selectorvalves[idx].begin(SELECTORVALVE_WIRE, addr, 1, max_pos);
+        if (result == 0) {
+          execution_status = COMPLETED_WITHOUT_ERRORS;
+        }
+        else {
+          execution_status = CMD_EXECUTION_ERROR;
+        }
+      }
+      break;
+
+    case INITIALIZE_BANG_BANG_PARAMS: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 16 bytes, don't do anything
+        // 3 bytes for cmd and UID, 13 for initializing the controller
+        if (size != 15) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        bool fwd_back;
         double t_low, t_high, o_min, o_max;
         uint32_t tstep;
-        
-        t_low  = (((buffer[3] << 8) + buffer[4]) / INT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
-        t_high = (((buffer[5] << 8) + buffer[6]) / INT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
-        setThresholds(t_low, t_high);
-        o_min = (((buffer[7] << 8) + buffer[8]) / INT16_MAX) * TTP_PWR_LIM_mW;
-        o_max = (((buffer[9] << 8) + buffer[10]) / INT16_MAX) * TTP_PWR_LIM_mW;
-        setOutputRange(o_min, o_max);
-        tstep = (buffer[11] << (8 * 3)) + (buffer[12] << (8 * 2)) + (buffer[13] << 8) + buffer[14];
-        setTimeStep(tstep);
-        
+
+        fwd_back = buffer[3];
+
+        t_low  = (((buffer[4] << 8) + buffer[5]) / INT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
+        t_high = (((buffer[6] << 8) + buffer[7]) / INT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
+        o_min = (((buffer[8] << 8) + buffer[9]) / INT16_MAX) * TTP_PWR_LIM_mW;
+        o_max = (((buffer[10] << 8) + buffer[11]) / INT16_MAX) * TTP_PWR_LIM_mW;
+        tstep = (buffer[12] << (8 * 3)) + (buffer[13] << (8 * 2)) + (buffer[14] << 8) + buffer[15];
+
+        if (fwd_back) {
+          fluid_in_bb.setThresholds(t_low, t_high);
+          fluid_in_bb.setOutputRange(o_min, o_max);
+          fluid_in_bb.setTimeStep(tstep);
+        }
+        else {
+          fluid_out_bb.setThresholds(t_low, t_high);
+          fluid_out_bb.setOutputRange(o_min, o_max);
+          fluid_out_bb.setTimeStep(tstep);
+        }
+
         execution_status = COMPLETED_WITHOUT_ERRORS;
         state = INTERNAL_STATE_IDLE;
       }
       break;
 
-    case INITIALIZE_PID_PARAMETERS: {
+    case INITIALIZE_PID_PARAMS: {
         // Ensure the correct amount of data was sent
         // If we don't see exactly 19 bytes, don't do anything
         // 3 bytes for cmd and UID, 16 for initializing the controller
+        if (size != 19) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
         double kp, ki, kd, ilim;
         double o_min, o_max;
         uint32_t tstep;
@@ -403,22 +423,136 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         ki   = (((buffer[5] << 8) + buffer[6])  / INT16_MAX) * KI_MAX;
         kd   = (((buffer[7] << 8) + buffer[8])  / INT16_MAX) * KD_MAX;
         ilim = (((buffer[9] << 8) + buffer[10]) / INT16_MAX) * ILIM_MAX;
-        setGains(kp, ki, kd, ilim);
         o_min = (((buffer[11] << 8) + buffer[12]) / INT16_MAX) * TTP_PWR_LIM_mW;
         o_max = (((buffer[13] << 8) + buffer[14]) / INT16_MAX) * TTP_PWR_LIM_mW;
-        setOutputRange(o_min, o_max);
         tstep = (buffer[15] << (8 * 3)) + (buffer[16] << (8 * 2)) + (buffer[17] << 8) + buffer[18];
-        setTimeStep(tstep);
+
+        fluid_out_pid.setGains(kp, ki, kd, ilim);
+        fluid_out_pid.setOutputRange(o_min, o_max);
+        fluid_out_pid.setTimeStep(tstep);
 
         execution_status = COMPLETED_WITHOUT_ERRORS;
         state = INTERNAL_STATE_IDLE;
       }
       break;
 
+    case SET_SOLENOID_VALVES: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 5 bytes, don't do anything
+        // 3 bytes for cmd and UID, 2 for setting all 16 positions
+        if (size != 5) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        // Unpack the setting
+        uint16_t setting = (buffer[3] << 8) + buffer[4];
+        valves.transfer(setting);
+        execution_status = COMPLETED_WITHOUT_ERRORS;
+        state = INTERNAL_STATE_IDLE;
+      }
+      break;
+
+    case SET_SOLENOID_VALVE: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 5 bytes, don't do anything
+        // 3 bytes for cmd and UID, 2 for picking which index to set/clear
+        if (size != 5) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        bool op = buffer[3];
+        uint8_t idx = buffer[4];
+
+        if (op) {
+          valves.turn_on(idx);
+        }
+        else {
+          valves.turn_off(idx);
+        }
+
+        execution_status = COMPLETED_WITHOUT_ERRORS;
+        state = INTERNAL_STATE_IDLE;
+      }
+      break;
+
+    case SET_ROTARY_VALVE: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 5 bytes, don't do anything
+        // 3 bytes for cmd and UID, 2 for the index and position command
+        if (size != 5) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        // Ensure we are setting a valid valve
+        uint8_t idx = buffer[3];
+        if (idx >= SELECTORVALVE_QTY) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        // Ensure we have a valid position
+        uint8_t pos = buffer[4];
+        if ((pos < selectorvalves[idx].pos_min) || (pos > selectorvalves[idx].pos_max)) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        // Send the command
+        // Note - this is non-blocking, it takes ~1 second for the position to actually change
+        uint8_t result = selectorvalves[idx].send_command(RheoLink_POS, pos);
+        if (result <= selectorvalves[idx].pos_max) {
+          execution_status = COMPLETED_WITHOUT_ERRORS;
+        }
+        else {
+          execution_status = CMD_EXECUTION_ERROR;
+        }
+        state = INTERNAL_STATE_IDLE;
+      }
+      break;
+
+    case SET_PUMP_PWR_OPEN_LOOP: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 5 bytes, don't do anything
+        // 3 bytes for cmd and UID, 2 for power
+        if (size != 5) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        // Disable all control loops
+        fluid_in_bb.stop();
+        fluid_out_bb.stop();
+        fluid_out_pid.stop();
+        // Initialize variables
+        double pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]) / TTP_MAX_PWR;
+        pwr_setting *= UINT16_MAX;
+        // Set power
+        if (pwr_setting > 0) {
+          discpump.enable(true);
+        }
+        else {
+          discpump.enable(false);
+        }
+        bool result = discpump.set_target(pwr_setting);
+        if (result) {
+          execution_status = COMPLETED_WITHOUT_ERRORS;
+        }
+        else {
+          execution_status = CMD_EXECUTION_ERROR;
+        }
+        state = INTERNAL_STATE_IDLE;
+      }
+      break;
+
+
     default:
       state = INTERNAL_STATE_IDLE;
       execution_status = CMD_INVALID;
       break;
   }
+
   return;
 }

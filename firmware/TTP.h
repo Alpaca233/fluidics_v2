@@ -66,7 +66,7 @@ class TTP{
     bool begin(HardwareSerial &s);
     bool init(int16_t pwr_lim, uint8_t src, uint8_t mode, uint8_t stream);
     bool enable(bool en);
-    bool set_pwr_limit(int16_t pwr_lim);
+    bool set_pwr_limit(uint16_t pwr_lim);
     bool set_target(float target);
     bool get_status(int16_t &error_code, int16_t &drive_freq, float &drive_pwr, float &drive_current, float &drive_voltage, float &power_limit);
     int16_t read_int(TTPRegisterMap_t reg);
@@ -76,6 +76,7 @@ class TTP{
     bool send_packet(char *tx_buffer, char *rx_buffer);
     bool write_register(TTPRegisterMap_t reg, float dat);
     bool write_register(TTPRegisterMap_t reg, int16_t dat);
+    bool write_register(TTPRegisterMap_t reg, uint16_t dat);
     HardwareSerial *s_;
     bool init_;
     

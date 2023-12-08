@@ -306,6 +306,24 @@ bool TTP::write_register(TTPRegisterMap_t reg, int16_t dat) {
   // Send the command
   return this->send_packet(tx, rx);
 }
+bool TTP::write_register(TTPRegisterMap_t reg, uint16_t dat) {
+  char rx[TTP_BUFFER_SIZE];
+  char tx[TTP_BUFFER_SIZE];
+  int16_t cmd_len;
+
+  if(!init_){
+    return false;
+  }
+
+  // Format the UART command
+  cmd_len = sprintf(tx, TTP_WR_REG_INT_FORMAT, reg, dat);
+  // return with error if sprintf failed
+  if ((cmd_len < 0) || (cmd_len > TTP_BUFFER_SIZE)) {
+    return false;
+  }
+  // Send the command
+  return this->send_packet(tx, rx);
+}
 bool TTP::write_register(TTPRegisterMap_t reg, float dat) {
   char rx[TTP_BUFFER_SIZE];
   char tx[TTP_BUFFER_SIZE];
@@ -430,7 +448,7 @@ bool TTP::enable(bool en) {
   DEPENDENCIES: None
   -----------------------------------------------------------------------------
 */
-bool TTP::set_pwr_limit(int16_t pwr_lim) {
+bool TTP::set_pwr_limit(uint16_t pwr_lim) {
   if(!init_){
     return false;
   }

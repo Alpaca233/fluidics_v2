@@ -85,13 +85,14 @@ RheoLink::RheoLink()
   SHARED VARIABLES:
      TwoWire *w_: pointer to stream object, written to and read from
      uint8_t address_: I2C address, written to and read from
+     uint8_t pos_min, pos_max: written to
 
   GLOBAL VARIABLES: None
 
   DEPENDENCIES: Wire.h
   -----------------------------------------------------------------------------
 */
-uint8_t RheoLink::begin(TwoWire &w, uint8_t address) {
+uint8_t RheoLink::begin(TwoWire &w, uint8_t address, uint8_t p_min, uint8_t p_max) {
 
   address_ = address >> 1;
   
@@ -100,6 +101,9 @@ uint8_t RheoLink::begin(TwoWire &w, uint8_t address) {
   w_->beginTransmission(address_);
 
   init_ = true;
+
+  pos_min = p_min;
+  pos_max = p_max;
 
   return w_->endTransmission(address_);
 }

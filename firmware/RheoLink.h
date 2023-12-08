@@ -62,10 +62,12 @@ enum RheoLinkCommand_t {
 class RheoLink {
   public:
     RheoLink();
-    uint8_t begin(TwoWire &w, uint8_t address);
+    uint8_t begin(TwoWire &w, uint8_t address, uint8_t p_min, uint8_t p_max);
     uint8_t send_command(RheoLinkCommand_t cmd, uint8_t data = RheoLink_DUMMY_DATA);
     uint8_t read_register(RheoLinkCommand_t target);
     uint8_t block_until_done(uint32_t timeout = RheoLink_TIMEOUT);
+    uint8_t pos_min;
+    uint8_t pos_max;
   private:
     uint8_t address_;
     TwoWire *w_;
