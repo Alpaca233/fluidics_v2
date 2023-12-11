@@ -75,5 +75,4 @@ class RheoLink {
 };
 
 #undef RheoLink_DUMMY_DATA
-#undef RheoLink_TIMEOUT
 #endif /* RHEOLINK_H_ */

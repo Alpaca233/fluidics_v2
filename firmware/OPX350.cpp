@@ -79,9 +79,9 @@ bool OPX350::begin(uint8_t LOW_A_pin, uint8_t HIGH_B_pin, uint8_t CALIB_pin) {
 
 /*
   -----------------------------------------------------------------------------
-  DESCRIPTION: calibrate() returns true if the device calibrates successfully and returns false otherwise. This is a blocking function.
+  DESCRIPTION: calibrate() sends the calibration signal
 
-  OPERATION:   Send a low pulse on the CALIB line for CALIB_LOW_A_TIME_MS milliseconds. Then, wait until pin B goes low for OPX35_CALIB_LOW_INTERVAL_MS or we time out. If there is a timeout, return false.
+  OPERATION:   Send a low pulse on the CALIB line for CALIB_LOW_A_TIME_MS milliseconds.
 
   ARGUMENTS: None
 
@@ -92,7 +92,7 @@ bool OPX350::begin(uint8_t LOW_A_pin, uint8_t HIGH_B_pin, uint8_t CALIB_pin) {
   LOCAL VARIABLES: uint8_t reading
 
   SHARED VARIABLES:
-      uint8_t LOW_A_pin, HIGH_B_pin, CALIB_pin
+      uint8_t CALIB_pin
 
   GLOBAL VARIABLES: None
 
@@ -105,9 +105,6 @@ bool OPX350::calibrate() {
   digitalWrite(CALIB_pin_, LOW);
   delay(OPX35_CALIB_LOW_PULSE_MS);
   digitalWrite(CALIB_pin_, HIGH);
-  // wait for calibration to finish
-  delay(OPX35_CALIB_TIMEOUT_MS);
-  // If calibration failed, reading is low
   return this->read();
 }
 

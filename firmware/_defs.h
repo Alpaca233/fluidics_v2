@@ -1,6 +1,9 @@
 
 #define FROM_MCU_MSG_LENGTH 30
 #define TX_INTERVAL_MS 60
+#define SENSOR_INTERVAL_MS 20
+
+#define DEBOUNCE_TIME_MS 750
 
 #define VOLUME_UL_MAX 5000
 
@@ -51,7 +54,9 @@ enum InternalState_t {
   INTERNAL_STATE_LOADING_MEDIUM      = 2,
   INTERNAL_STATE_VENT_VB0            = 3,
   INTERNAL_STATE_UNLOADING           = 4,
-  INTERNAL_STATE_CLEARING            = 5
+  INTERNAL_STATE_CLEARING            = 5,
+  INTERNAL_STATE_MOVING_ROTARY       = 6,
+  INTERNAL_STATE_CALIB_FLUID         = 7,
 };
 
 enum CommandExecution_t {
@@ -61,18 +66,37 @@ enum CommandExecution_t {
   CMD_EXECUTION_ERROR       = 3
 };
 
+enum ClosedLoopType_t {
+  FLUID_OUT_BANG_BANG = 0,
+  FLUID_IN_BANG_BANG  = 1,
+  FLUID_OUT_PID       = 2,
+  PRESSURE_PID        = 3,
+  VACUUM_PID          = 4
+};
+
+enum ValvesStates_t {
+  FLUID_TO_CHAMBER = 0x00,
+};
+
 enum SerialCommands_t {
   CLEAR                        = 0,
   INITIALIZE_DISC_PUMP         = 1,
   INITIALIZE_PRESSURE_SENSOR   = 2,
   INITIALIZE_FLOW_SENSOR       = 3,
-  INITIALIZE_BUBBLE_SENSORS    = 4,
+  INITIALIZE_BUBBLE_SENSORS    = 4, 
   INITIALIZE_VALVES            = 5,
   INITIALIZE_ROTARY            = 6,
   INITIALIZE_BANG_BANG_PARAMS  = 7,
   INITIALIZE_PID_PARAMS        = 8,
   SET_SOLENOID_VALVES          = 9,
   SET_SOLENOID_VALVE           = 10,
-  SET_ROTARY_VALVE             = 11,
+  SET_ROTARY_VALVE             = 11, 
   SET_PUMP_PWR_OPEN_LOOP       = 12,
+  BEGIN_CLOSED_LOOP            = 13,
+  STOP_CLOSED_LOOP             = 14,
+  CLEAR_LINES                  = 15, // TODO
+  LOAD_FLUID_TO_SENSOR         = 16, // TODO
+  LOAD_FLUID_VOLUME            = 17, // TODO
+  UNLOAD_FLUID_VOLUME          = 18, // TODO
+  VENT_VB0                     = 19, // TODO
 };

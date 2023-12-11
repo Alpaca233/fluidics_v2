@@ -20,21 +20,31 @@
 double global_flowrate_reading = 0;
 double global_power_out = 0;
 double global_pid_setpoint = 0;
+double global_pressure_reading = 0;
+double global_vacuum_reading = 0;
 AutoBangBang fluid_in_bb(&global_flowrate_reading, &global_power_out, +1);
 AutoBangBang fluid_out_bb(&global_flowrate_reading, &global_power_out, -1);
 AutoPID fluid_out_pid(&global_flowrate_reading, &global_pid_setpoint, &global_power_out, -1);
+AutoPID pressure_press_pid(&global_pressure_reading, &global_pid_setpoint, &global_power_out, 1);
+AutoPID pressure_vacuum_pid(&global_vacuum_reading, &global_pid_setpoint, &global_power_out, -1);
 
 // NXP33996 - valve controller
 NXP33996 valves;
 
 // OPX350 - bubble sensors
 OPX350 fluidsensor_front, fluidsensor_back;
+bool fs_front_debounce, fs_back_debounce;
+uint32_t fs_front_time, fs_back_time;
 
 // Selector valves
 RheoLink selectorvalves[SELECTORVALVE_QTY];
 
 // SLF3X flowrate sensor
 SLF3X flowsensor;
+bool flowsensor_debounce;
+uint32_t flow_time;
+double integrated_flowrate;
+bool integrate_flowrate;
 
 // SSCX pressure sensors
 SSCX pressuresensors[SSCX_QTY];
@@ -47,6 +57,7 @@ PacketSerial pSerial;
 
 // Timekeeping
 uint32_t tx_interval_ms = TX_INTERVAL_MS;
+uint32_t sensor_interval_ms = SENSOR_INTERVAL_MS;
 elapsedMillis time_since_last_tx = 0;
 elapsedMillis time_since_cmd_started = 0;
 elapsedMillis time_since_last_sensor = 0;
@@ -57,6 +68,7 @@ CommandExecution_t execution_status;
 uint16_t           cmd_uid;
 SerialCommands_t   cmd_rxed;
 double             integrated_volume_uL;
+uint32_t           timeout_duration;
 
 void setup() {
   // Initialize serial communications with the host computer
@@ -73,17 +85,118 @@ void loop() {
   fluid_in_bb.run();
   fluid_out_bb.run();
   fluid_out_pid.run();
+  pressure_press_pid.run();
+  pressure_vacuum_pid.run();
 
   // If sufficient time elapsed, send status packet back
-  if (time_since_last_tx > tx_interval_ms) {
+  if (time_since_last_tx >= tx_interval_ms) {
     time_since_last_tx -= tx_interval_ms;
+    // It takes 2 ms max to read all the sensors - time taken up mostly by send operation
     sendStatusPacket();
   }
 
-  // State machine for performing multi-step operations
-  switch (state) {
-    case INTERNAL_STATE_IDLE:
-      break;
+  // If sufficient time elapsed, read the sensors and manage the state
+  if (time_since_last_sensor >= sensor_interval_ms) {
+    uint32_t dt = time_since_last_sensor;
+    time_since_last_sensor -= sensor_interval_ms;
+
+    // Read all the sensors
+    // FLUID SENSORS
+    uint8_t fs1 = fluidsensor_front.read();
+    uint8_t fs2 = fluidsensor_back.read();
+    // SELECTOR VALVE STATUS
+    uint8_t selectorvalve_status[SELECTORVALVE_QTY];
+    for (uint8_t i = 0; i < SELECTORVALVE_QTY; i++) {
+      selectorvalve_status[i] = byte(selectorvalves[i].read_register(RheoLink_STATUS));
+    }
+    // PRESSURE
+    int16_t press_readings[2];
+    int16_t pressure_results[SSCX_QTY];
+    for (uint8_t i = 0; i < SSCX_QTY; i++) {
+      pressuresensors[i].read(press_readings);
+      pressure_results[i] = press_readings[SSCX_PRESS_IDX];
+    }
+    // FLOWRATE
+    int16_t flow_readings[3];
+    flowsensor.read(flow_readings);
+    bool flowsensor_fluid_present = (flow_readings[SLF3X_FLAG_IDX] & SLF3X_NO_FLUID);
+
+    // DEBOUNCING
+    if (fs1 != 0) {
+      fs_front_time = millis();
+      fs_front_debounce = true;
+    }
+    else if ((millis() - fs_front_time) > DEBOUNCE_TIME_MS) {
+      fs_front_debounce = false;
+    }
+    if (fs2 != 0) {
+      fs_back_time = millis();
+      fs_back_debounce = true;
+    }
+    else if ((millis() - fs_back_time) > DEBOUNCE_TIME_MS) {
+      fs_back_debounce = false;
+    }
+    if (flowsensor_fluid_present != 0) {
+      flow_time = millis();
+      flowsensor_debounce = true;
+    }
+    else if ((millis() - flow_time) > DEBOUNCE_TIME_MS) {
+      flowsensor_debounce = false;
+    }
+
+    // State machine for performing multi-step operations
+    switch (state) {
+      case INTERNAL_STATE_IDLE: {
+          // Check if we hit the back fluid sensor
+          if ((fs2 == OPX350_LOW) || (fs2 == OPX350_HIGH) || (fs2 == OPX350_RD_ER)) {
+            // Turn off all control loops and disable the pump
+            fluid_in_bb.stop();
+            fluid_out_bb.stop();
+            fluid_out_pid.stop();
+            pressure_press_pid.stop();
+            pressure_vacuum_pid.stop();
+            discpump.set_target(0);
+            discpump.enable(false);
+            // Set the valves to minimize additional fluid flow
+            valves.transfer(FLUID_TO_CHAMBER);
+            // Indicate an error has occured
+            execution_status = CMD_EXECUTION_ERROR;
+          }
+          else {
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+          }
+        }
+        break;
+      case INTERNAL_STATE_MOVING_ROTARY: {
+          // Check if we timed out
+          // If any of the valves are reporting a value greater than their pos_max, value_moving becomes true
+          bool valve_moving = false;
+          for (uint8_t i = 0; i < SELECTORVALVE_QTY; i++) {
+            valve_moving |= (selectorvalve_status[i] > selectorvalves[i].pos_max);
+          }
+          // If we aren't moving, we are done here
+          if (!valve_moving) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+          }
+          // If we aren't, check if we timed out
+          else if ((execution_status == IN_PROGRESS) && (time_since_cmd_started > timeout_duration)) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = CMD_EXECUTION_ERROR;
+          }
+        }
+        break;
+      case INTERNAL_STATE_CALIB_FLUID: {
+          // Wait for timeout
+          if ((execution_status == IN_PROGRESS) && (time_since_cmd_started > timeout_duration)) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+          }
+        }
+        break;
+      default:
+        break;
+    }
   }
 }
 
@@ -109,7 +222,6 @@ void sendStatusPacket() {
         byte 27     : elapsed time since the start of the last internal program (in seconds)
         byte 28-29  : total volume (ul), range: 0 - 5000
   */
-
   byte buffer_tx[FROM_MCU_MSG_LENGTH];
   buffer_tx[0] = byte(cmd_uid >> 8);
   buffer_tx[1] = byte(cmd_uid & 0xFF);
@@ -186,6 +298,8 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         fluid_in_bb.stop();
         fluid_out_bb.stop();
         fluid_out_pid.stop();
+        pressure_press_pid.stop();
+        pressure_vacuum_pid.stop();
         valves.clear_all();
         for (uint8_t i = 0; i < SELECTORVALVE_QTY; i++) {
           selectorvalves[i].send_command(RheoLink_POS, 1);
@@ -217,6 +331,8 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         fluid_in_bb.stop();
         fluid_out_bb.stop();
         fluid_out_pid.stop();
+        pressure_press_pid.stop();
+        pressure_vacuum_pid.stop();
         // Initialize variables
         int16_t pwr_lim = int16_t((buffer[3] << 8) + buffer[4]);
         // Begin initialization
@@ -232,6 +348,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         else {
           execution_status = CMD_EXECUTION_ERROR;
         }
+        time_since_cmd_started = 0;
         state = INTERNAL_STATE_IDLE;
       }
       break;
@@ -262,6 +379,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         else {
           execution_status = CMD_EXECUTION_ERROR;
         }
+        time_since_cmd_started = 0;
         state = INTERNAL_STATE_IDLE;
       }
       break;
@@ -300,6 +418,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         else {
           execution_status = CMD_EXECUTION_ERROR;
         }
+        time_since_cmd_started = 0;
         state = INTERNAL_STATE_IDLE;
       }
 
@@ -315,16 +434,13 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         fluidsensor_front.begin(FLUIDSENSORFRONT_A, FLUIDSENSORFRONT_B, FLUIDSENSORFRONT_C);
         fluidsensor_back.begin(FLUIDSENSORBACK_A, FLUIDSENSORBACK_B, FLUIDSENSORBACK_C);
 
-        bool calibrated = true;
-        calibrated &= fluidsensor_front.calibrate();
-        calibrated &= fluidsensor_back.calibrate();
-        if (calibrated) {
-          execution_status = COMPLETED_WITHOUT_ERRORS;
-        }
-        else {
-          execution_status = CMD_EXECUTION_ERROR;
-        }
-        state = INTERNAL_STATE_IDLE;
+        fluidsensor_front.calibrate();
+        fluidsensor_back.calibrate();
+
+        time_since_cmd_started = 0;
+        state = INTERNAL_STATE_CALIB_FLUID;
+        execution_status = IN_PROGRESS;
+        timeout_duration = OPX35_CALIB_TIMEOUT_MS;
       }
       break;
 
@@ -345,15 +461,14 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         // Ensure the correct amount of data was sent
         // If we don't see exactly 5 bytes, don't do anything
         // 3 bytes for cmd and UID, 2 for I2C address and max
+        state = INTERNAL_STATE_IDLE;
         if (size != 5) {
-          state = INTERNAL_STATE_IDLE;
           execution_status = CMD_INVALID;
           return;
         }
         // Ensure we are trying to initialize a pump that exists
         uint8_t idx = buffer[3];
         if (idx >= SELECTORVALVE_QTY) {
-          state = INTERNAL_STATE_IDLE;
           execution_status = CMD_INVALID;
           return;
         }
@@ -367,6 +482,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         else {
           execution_status = CMD_EXECUTION_ERROR;
         }
+        time_since_cmd_started = 0;
       }
       break;
 
@@ -379,11 +495,10 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           execution_status = CMD_INVALID;
           return;
         }
-        bool fwd_back;
         double t_low, t_high, o_min, o_max;
         uint32_t tstep;
 
-        fwd_back = buffer[3];
+        ClosedLoopType_t type = buffer[3];
 
         t_low  = (((buffer[4] << 8) + buffer[5]) / INT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
         t_high = (((buffer[6] << 8) + buffer[7]) / INT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
@@ -391,27 +506,35 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         o_max = (((buffer[10] << 8) + buffer[11]) / INT16_MAX) * TTP_PWR_LIM_mW;
         tstep = (buffer[12] << (8 * 3)) + (buffer[13] << (8 * 2)) + (buffer[14] << 8) + buffer[15];
 
-        if (fwd_back) {
-          fluid_in_bb.setThresholds(t_low, t_high);
-          fluid_in_bb.setOutputRange(o_min, o_max);
-          fluid_in_bb.setTimeStep(tstep);
-        }
-        else {
-          fluid_out_bb.setThresholds(t_low, t_high);
-          fluid_out_bb.setOutputRange(o_min, o_max);
-          fluid_out_bb.setTimeStep(tstep);
+        switch (type) {
+          case FLUID_IN_BANG_BANG:
+            fluid_in_bb.setThresholds(t_low, t_high);
+            fluid_in_bb.setOutputRange(o_min, o_max);
+            fluid_in_bb.setTimeStep(tstep);
+
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            break;
+          case FLUID_OUT_BANG_BANG:
+            fluid_out_bb.setThresholds(t_low, t_high);
+            fluid_out_bb.setOutputRange(o_min, o_max);
+            fluid_out_bb.setTimeStep(tstep);
+
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            break;
+          default:
+            execution_status = CMD_INVALID;
         }
 
-        execution_status = COMPLETED_WITHOUT_ERRORS;
         state = INTERNAL_STATE_IDLE;
+        time_since_cmd_started = 0;
       }
       break;
 
     case INITIALIZE_PID_PARAMS: {
         // Ensure the correct amount of data was sent
-        // If we don't see exactly 19 bytes, don't do anything
-        // 3 bytes for cmd and UID, 16 for initializing the controller
-        if (size != 19) {
+        // If we don't see exactly 20 bytes, don't do anything
+        // 3 bytes for cmd and UID, 17 for initializing the controller
+        if (size != 20) {
           state = INTERNAL_STATE_IDLE;
           execution_status = CMD_INVALID;
           return;
@@ -419,20 +542,45 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         double kp, ki, kd, ilim;
         double o_min, o_max;
         uint32_t tstep;
-        kp   = (((buffer[3] << 8) + buffer[4])  / INT16_MAX) * KP_MAX;
-        ki   = (((buffer[5] << 8) + buffer[6])  / INT16_MAX) * KI_MAX;
-        kd   = (((buffer[7] << 8) + buffer[8])  / INT16_MAX) * KD_MAX;
-        ilim = (((buffer[9] << 8) + buffer[10]) / INT16_MAX) * ILIM_MAX;
-        o_min = (((buffer[11] << 8) + buffer[12]) / INT16_MAX) * TTP_PWR_LIM_mW;
-        o_max = (((buffer[13] << 8) + buffer[14]) / INT16_MAX) * TTP_PWR_LIM_mW;
-        tstep = (buffer[15] << (8 * 3)) + (buffer[16] << (8 * 2)) + (buffer[17] << 8) + buffer[18];
 
-        fluid_out_pid.setGains(kp, ki, kd, ilim);
-        fluid_out_pid.setOutputRange(o_min, o_max);
-        fluid_out_pid.setTimeStep(tstep);
+        ClosedLoopType_t type = buffer[3];
 
-        execution_status = COMPLETED_WITHOUT_ERRORS;
+        kp   = (((buffer[4] << 8) + buffer[5])  / INT16_MAX) * KP_MAX;
+        ki   = (((buffer[6] << 8) + buffer[7])  / INT16_MAX) * KI_MAX;
+        kd   = (((buffer[8] << 8) + buffer[9])  / INT16_MAX) * KD_MAX;
+        ilim = (((buffer[10] << 8) + buffer[11]) / INT16_MAX) * ILIM_MAX;
+        o_min = (((buffer[12] << 8) + buffer[13]) / INT16_MAX) * TTP_PWR_LIM_mW;
+        o_max = (((buffer[14] << 8) + buffer[15]) / INT16_MAX) * TTP_PWR_LIM_mW;
+        tstep = (buffer[16] << (8 * 3)) + (buffer[17] << (8 * 2)) + (buffer[18] << 8) + buffer[19];
+
+        switch (type) {
+          case FLUID_OUT_PID:
+            fluid_out_pid.setGains(kp, ki, kd, ilim);
+            fluid_out_pid.setOutputRange(o_min, o_max);
+            fluid_out_pid.setTimeStep(tstep);
+
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            break;
+          case PRESSURE_PID:
+            pressure_press_pid.setGains(kp, ki, kd, ilim);
+            pressure_press_pid.setOutputRange(o_min, o_max);
+            pressure_press_pid.setTimeStep(tstep);
+
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            break;
+          case VACUUM_PID:
+            pressure_vacuum_pid.setGains(kp, ki, kd, ilim);
+            pressure_vacuum_pid.setOutputRange(o_min, o_max);
+            pressure_vacuum_pid.setTimeStep(tstep);
+
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            break;
+          default:
+            execution_status = CMD_INVALID;
+        }
+
         state = INTERNAL_STATE_IDLE;
+        time_since_cmd_started = 0;
       }
       break;
 
@@ -450,6 +598,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         valves.transfer(setting);
         execution_status = COMPLETED_WITHOUT_ERRORS;
         state = INTERNAL_STATE_IDLE;
+        time_since_cmd_started = 0;
       }
       break;
 
@@ -474,6 +623,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
 
         execution_status = COMPLETED_WITHOUT_ERRORS;
         state = INTERNAL_STATE_IDLE;
+        time_since_cmd_started = 0;
       }
       break;
 
@@ -503,13 +653,15 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         // Send the command
         // Note - this is non-blocking, it takes ~1 second for the position to actually change
         uint8_t result = selectorvalves[idx].send_command(RheoLink_POS, pos);
-        if (result <= selectorvalves[idx].pos_max) {
-          execution_status = COMPLETED_WITHOUT_ERRORS;
-        }
-        else {
+        if (result > selectorvalves[idx].pos_max) {
           execution_status = CMD_EXECUTION_ERROR;
         }
-        state = INTERNAL_STATE_IDLE;
+        else {
+          execution_status = IN_PROGRESS;
+        }
+        state = INTERNAL_STATE_MOVING_ROTARY;
+        timeout_duration = RheoLink_TIMEOUT;
+        time_since_cmd_started = 0;
       }
       break;
 
@@ -526,6 +678,8 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         fluid_in_bb.stop();
         fluid_out_bb.stop();
         fluid_out_pid.stop();
+        pressure_press_pid.stop();
+        pressure_vacuum_pid.stop();
         // Initialize variables
         double pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]) / TTP_MAX_PWR;
         pwr_setting *= UINT16_MAX;
@@ -544,6 +698,68 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           execution_status = CMD_EXECUTION_ERROR;
         }
         state = INTERNAL_STATE_IDLE;
+        time_since_cmd_started = 0;
+      }
+      break;
+
+    case BEGIN_CLOSED_LOOP: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 4 bytes, don't do anything
+        // 3 bytes for cmd and UID, 1 for which loop to enable
+        if (size != 4) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        ClosedLoopType_t type = buffer[3];
+
+        switch (type) {
+          case FLUID_OUT_BANG_BANG:
+            fluid_out_bb.begin();
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            break;
+          case FLUID_IN_BANG_BANG:
+            fluid_in_bb.begin();
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            break;
+          case FLUID_OUT_PID:
+            fluid_out_pid.begin();
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            break;
+          case PRESSURE_PID:
+            pressure_press_pid.begin();
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            break;
+          case VACUUM_PID:
+            pressure_vacuum_pid.begin();
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            break;
+          default:
+            execution_status = CMD_INVALID;
+        }
+        state = INTERNAL_STATE_IDLE;
+        time_since_cmd_started = 0;
+      }
+      break;
+
+    case STOP_CLOSED_LOOP: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 3 bytes, don't do anything
+        // 3 bytes for cmd and UID
+        if (size != 3) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        // Disable all control loops
+        fluid_in_bb.stop();
+        fluid_out_bb.stop();
+        fluid_out_pid.stop();
+        pressure_press_pid.stop();
+        pressure_vacuum_pid.stop();
+        execution_status = COMPLETED_WITHOUT_ERRORS;
+        state = INTERNAL_STATE_IDLE;
+        time_since_cmd_started = 0;
       }
       break;
 
