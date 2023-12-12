@@ -62,7 +62,7 @@ static uint8_t calculate_crc(uint8_t *dat) {
 
 // Initialize the SLF3X class
 SLF3X::SLF3X() {
-  init_ = false;
+  init = false;
   return;
 }
 
@@ -96,7 +96,7 @@ SLF3X::SLF3X() {
   -----------------------------------------------------------------------------
 */
 bool SLF3X::begin(TwoWire &W, uint8_t medium, bool do_crc) {
-  init_ = true;
+  init = true;
   uint16_t n = 0;
   int8_t ret = 0;
   uint16_t n_tries = SLF3X_N_TRIES;
@@ -192,7 +192,7 @@ uint8_t SLF3X::read(int16_t *readings) {
   for (uint8_t i = 0; i < 3; i++) {
     readings[i] = INT16_MAX;
   }
-  if(!init_){
+  if(!init){
     return 0xFF;
   }
   

@@ -29,7 +29,7 @@
   LOCAL VARIABLES: None
 
   SHARED VARIABLES:
-      bool init_
+      bool init
 
   GLOBAL VARIABLES: None
 
@@ -37,7 +37,7 @@
   -----------------------------------------------------------------------------
 */
 OPX350::OPX350() {
-  init_ = false;
+  init = false;
 }
 
 /*
@@ -57,7 +57,7 @@ OPX350::OPX350() {
 
   SHARED VARIABLES:
       uint8_t LOW_A_pin, HIGH_B_pin, CALIB_pin
-      bool init_
+      bool init
 
   GLOBAL VARIABLES: None
 
@@ -72,7 +72,7 @@ bool OPX350::begin(uint8_t LOW_A_pin, uint8_t HIGH_B_pin, uint8_t CALIB_pin) {
   pinMode(HIGH_B_pin_, INPUT);
   pinMode(CALIB_pin_, OUTPUT);
   digitalWrite(CALIB_pin_, HIGH);
-  init_ = true;
+  init = true;
 
   return true;
 }
@@ -129,7 +129,7 @@ bool OPX350::calibrate() {
 
   SHARED VARIABLES:
       uint8_t LOW_A_pin, HIGH_B_pin, CALIB_pin
-      bool init_
+      bool init
 
   GLOBAL VARIABLES: None
 
@@ -138,7 +138,7 @@ bool OPX350::calibrate() {
 */
 OPX350_READINGS OPX350::read() {
 
-  if (init_ == false)
+  if (init == false)
     return OPX350_ERR;
 
   return (!digitalRead(HIGH_B_pin_) << 1) | (!digitalRead(LOW_A_pin_));

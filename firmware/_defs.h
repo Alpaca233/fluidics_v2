@@ -75,7 +75,8 @@ enum ClosedLoopType_t {
 };
 
 enum ValvesStates_t {
-  FLUID_TO_CHAMBER = 0x00,
+  FLUID_TO_CHAMBER   = 0b0000000000000000,
+  FLUID_CLEAR_LINES  = 0b0000000000010111,  
 };
 
 enum SerialCommands_t {
@@ -94,7 +95,7 @@ enum SerialCommands_t {
   SET_PUMP_PWR_OPEN_LOOP       = 12,
   BEGIN_CLOSED_LOOP            = 13,
   STOP_CLOSED_LOOP             = 14,
-  CLEAR_LINES                  = 15, // TODO
+  CLEAR_LINES                  = 15, 
   LOAD_FLUID_TO_SENSOR         = 16, // TODO
   LOAD_FLUID_VOLUME            = 17, // TODO
   UNLOAD_FLUID_VOLUME          = 18, // TODO

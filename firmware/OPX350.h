@@ -48,11 +48,11 @@ class OPX350 {
     bool begin(uint8_t LOW_A_pin, uint8_t HIGH_B_pin, uint8_t CALIB_pin);
     bool calibrate();
     OPX350_READINGS read();
+    bool    init;
   private:
     uint8_t LOW_A_pin_;
     uint8_t HIGH_B_pin_;
     uint8_t CALIB_pin_;
-    bool    init_;
 };
 
 #endif /* OPX350_H_ */

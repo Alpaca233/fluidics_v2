@@ -54,10 +54,10 @@ class SLF3X {
     SLF3X();
     bool begin(TwoWire &W, uint8_t medium, bool do_crc);
     uint8_t read(int16_t *readings);
+    bool init;
   private:
     TwoWire *w_;
     bool do_crc_;
-    bool init_;
 };
 bool    SLF3X_init(TwoWire &W, uint8_t medium);
 uint8_t SLF3X_read(bool do_crc, TwoWire &W, int16_t *readings);
