@@ -71,12 +71,16 @@ enum ClosedLoopType_t {
   FLUID_IN_BANG_BANG  = 1,
   FLUID_OUT_PID       = 2,
   PRESSURE_PID        = 3,
-  VACUUM_PID          = 4
+  VACUUM_PID          = 4,
+  OPEN_LOOP_CTRL      = 5
 };
 
 enum ValvesStates_t {
   FLUID_TO_CHAMBER   = 0b0000000000000000,
   FLUID_CLEAR_LINES  = 0b0000000000010111,  
+  FLUID_TO_RESERVOIR = 0b0000000000010111,
+  FLUID_STOP_FLOW    = 0b0000000000010101,
+  VALVES_VENT_VB0    = 0b0000000000110101,
 };
 
 enum SerialCommands_t {
@@ -96,8 +100,9 @@ enum SerialCommands_t {
   BEGIN_CLOSED_LOOP            = 13,
   STOP_CLOSED_LOOP             = 14,
   CLEAR_LINES                  = 15, 
-  LOAD_FLUID_TO_SENSOR         = 16, // TODO
-  LOAD_FLUID_VOLUME            = 17, // TODO
-  UNLOAD_FLUID_VOLUME          = 18, // TODO
-  VENT_VB0                     = 19, // TODO
+  LOAD_FLUID_TO_SENSOR         = 16,
+  LOAD_FLUID_VOLUME            = 17,
+  UNLOAD_FLUID_VOLUME          = 18,
+  VENT_VB0                     = 19,
+  VOL_INTEGRATE_SETTING        = 20,
 };

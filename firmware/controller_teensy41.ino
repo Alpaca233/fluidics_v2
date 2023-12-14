@@ -45,7 +45,6 @@ SLF3X flowsensor;
 bool flowsensor_debounce;
 uint32_t flow_time;
 double integrated_flowrate;
-bool integrate_flowrate;
 
 // SSCX pressure sensors
 SSCX pressuresensors[SSCX_QTY];
@@ -64,14 +63,15 @@ elapsedMillis time_since_cmd_started = 0;
 elapsedMillis time_since_last_sensor = 0;
 elapsedMillis time_cmd_operation     = 0;
 
-// Track state
-InternalState_t    state;
-CommandExecution_t execution_status;
-uint16_t           cmd_uid;
-SerialCommands_t   cmd_rxed;
-double             integrated_volume_uL;
-uint32_t           timeout_duration;
-uint32_t           cmd_data;
+// Track state - modified by an interrupt
+volatile InternalState_t    state;
+volatile CommandExecution_t execution_status;
+volatile uint16_t           cmd_uid;
+volatile SerialCommands_t   cmd_rxed;
+volatile double             integrated_volume_uL;
+volatile uint32_t           timeout_duration;
+volatile uint32_t           cmd_data;
+volatile bool               integrate_flowrate;
 
 void setup() {
   // Initialize serial communications with the host computer
@@ -123,6 +123,7 @@ void loop() {
     int16_t flow_readings[3];
     flowsensor.read(flow_readings);
     bool flowsensor_fluid_present = (flow_readings[SLF3X_FLAG_IDX] & SLF3X_NO_FLUID);
+    double flowrate = flowsensor_fluid_present ? 0 : SLF3X_to_uLmin(flow_readings[SLF3X_FLOW_IDX]);
 
     // DEBOUNCING
     if (fs1 != 0) {
@@ -146,6 +147,19 @@ void loop() {
     else if ((millis() - flow_time) > DEBOUNCE_TIME_MS) {
       flowsensor_debounce = false;
     }
+
+    // INTEGRATION:
+    if (integrate_flowrate) {
+      // Check if fluid is present
+      if (flowsensor_fluid_present) {
+        integrated_flowrate += dt * flowrate / (60.0 * 1000.0);
+      }
+    }
+
+    // SET GLOBAL VARIABLES
+    global_flowrate_reading = flowrate;
+    global_pressure_reading = SSCX_to_psi(pressure_results[1]);
+    global_vacuum_reading = SSCX_to_psi(pressure_results[0]);
 
     // State machine for performing multi-step operations
     switch (state) {
@@ -194,21 +208,118 @@ void loop() {
       case INTERNAL_STATE_CLEARING: {
           bool fluids_present = fs_front_debounce || fs_back_debounce || flowsensor_debounce;
           // Check if we have timed out.
-          if(time_since_cmd_started > timeout_duration){
+          if (time_since_cmd_started > timeout_duration) {
             state = INTERNAL_STATE_IDLE;
             execution_status = CMD_EXECUTION_ERROR;
           }
           // Otherwise, if there are fluids, reset the count
-          else if (fluids_present){
+          else if (fluids_present) {
             time_cmd_operation = 0;
           }
           // Otherwise, if cmd_data ms have elapsed since the start of the operation, we are done
-          else if(time_cmd_operation > cmd_data){
+          else if (time_cmd_operation > cmd_data) {
             state = INTERNAL_STATE_IDLE;
             execution_status = COMPLETED_WITHOUT_ERRORS;
-          } 
+          }
         }
         break;
+      case INTERNAL_STATE_INITIALIZING_MEDIUM: {
+          bool fluids_present = flowsensor_fluid_present || (fs1 != 0);
+          // Check if we have timed out.
+          if (time_since_cmd_started > timeout_duration) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = CMD_EXECUTION_ERROR;
+          }
+          // Error check - don't let fluid get past the second fluid sensor
+          else if (fs2 != 0) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = CMD_EXECUTION_ERROR;
+            // Prevent fluid flow
+            discpump.set_target(0);
+            discpump.enable(false);
+            valves.transfer(FLUID_STOP_FLOW);
+          }
+          // Otherwise, if there are fluids, we are done!
+          else if (fluids_present) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            // Prevent fluid flow
+            discpump.set_target(0);
+            discpump.enable(false);
+            valves.transfer(FLUID_STOP_FLOW);
+          }
+        }
+        break;
+      case INTERNAL_STATE_UNLOADING:
+      case INTERNAL_STATE_LOADING_MEDIUM: {
+          // Check for error conditions:
+          //    timeout
+          bool timed_out = (time_since_cmd_started > timeout_duration);
+          //    flow sensor reading too high or too low
+          bool flow_sensor_saturated = (constrain(flow_readings[SLF3X_FLOW_IDX], SSCX_OUT_MIN, SSCX_OUT_MAX) != flow_readings[SLF3X_FLOW_IDX]);
+          //    fluid hit the second fluid sensor
+          bool overfilled_reservoir = (fs2 != 0);
+          //    integrated flowrate more than max
+          bool over_max = (abs(integrated_flowrate) > VOLUME_UL_MAX);
+          //    air in the fluid input
+          bool air_in_path = ((fs1 == 0) || !flowsensor_fluid_present);
+
+          // Check if we withdrew the correct volume
+          // TODO: check sign
+          double intermediate = UINT16_MAX * integrated_flowrate / VOLUME_UL_MAX;
+          intermediate = abs(intermediate);
+          bool volume_threshold_reached = (intermediate > cmd_data);
+
+          if (timed_out || flow_sensor_saturated || overfilled_reservoir || over_max ||  air_in_path) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = CMD_EXECUTION_ERROR;
+            // Prevent fluid flow
+            discpump.set_target(0);
+            discpump.enable(false);
+            valves.transfer(FLUID_STOP_FLOW);
+          }
+          else if (volume_threshold_reached) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            // Prevent fluid flow
+            discpump.set_target(0);
+            discpump.enable(false);
+            valves.transfer(FLUID_STOP_FLOW);
+          }
+          else {
+            // Update the setpoint if using a control loop, otherwise keep the target the same
+            if (!fluid_in_bb.isStopped() || !fluid_out_bb.isStopped() || !fluid_out_pid.isStopped() || !pressure_press_pid.isStopped() || !pressure_vacuum_pid.isStopped()) {
+              discpump.set_target(global_power_out);
+            }
+          }
+        }
+        break;
+
+      case INTERNAL_STATE_VENT_VB0: {
+          // Get rescaled pressure
+          float rescaled_vacuum = abs(UINT8_MAX * global_vacuum_reading / abs(SSCX_PSI_MIN));
+          // Check timeout
+          if (time_since_cmd_started > timeout_duration) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = CMD_EXECUTION_ERROR;
+            // Prevent fluid flow
+            discpump.set_target(0);
+            discpump.enable(false);
+            valves.transfer(FLUID_STOP_FLOW);
+          }
+
+          // Check if we hit the threshold
+          else if (rescaled_vacuum < cmd_data) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            // Prevent fluid flow
+            discpump.set_target(0);
+            discpump.enable(false);
+            valves.transfer(FLUID_STOP_FLOW);
+          }
+        }
+        break;
+
       default:
         break;
     }
@@ -337,6 +448,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         state = INTERNAL_STATE_IDLE;
         execution_status = COMPLETED_WITHOUT_ERRORS;
         cmd_uid = 0;
+        integrate_flowrate = false;
         integrated_volume_uL = 0;
       }
       break;
@@ -696,8 +808,8 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         // Disable all control loops
         disableControlLoops();
         // Initialize variables
-        double pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]) / TTP_MAX_PWR;
-        pwr_setting *= UINT16_MAX;
+        double pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]) / UINT16_MAX;
+        pwr_setting *= TTP_MAX_PWR;
         // Set power
         if (pwr_setting > 0) {
           discpump.enable(true);
@@ -776,7 +888,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
 
     case CLEAR_LINES: {
         // Ensure the correct amount of data was sent
-        // If we don't see exactly 8 bytes, don't do anything
+        // If we don't see exactly 9 bytes, don't do anything
         // 3 bytes for cmd and UID, 2 for power, 2 for timeout time, 2 for debounce interval
         if (size != 9) {
           state = INTERNAL_STATE_IDLE;
@@ -819,7 +931,233 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         time_cmd_operation = 0;
       }
       break;
+    case LOAD_FLUID_TO_SENSOR: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 7 bytes, don't do anything
+        // 3 bytes for cmd and UID, 2 for power, 2 for timeout time
+        if (size != 9) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        // Check if bubble and flow sensors are initialized
+        if (!fluidsensor_front.init || !fluidsensor_back.init || !flowsensor.init) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_EXECUTION_ERROR;
+          return;
+        }
+        // Unpack data
+        double pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]) / UINT16_MAX;
+        pwr_setting *= TTP_MAX_PWR;
+        timeout_duration = uint16_t((buffer[5] << 8) + buffer[6]);
+        // Set valves
+        valves.transfer(FLUID_TO_RESERVOIR);
+        // Set open-loop disc pump power
+        disableControlLoops();
+        if (pwr_setting > 0) {
+          discpump.enable(true);
+        }
+        else {
+          discpump.enable(false);
+        }
+        bool result = discpump.set_target(pwr_setting);
 
+        // If we failed to get the disc pump working, turn it off and return with error
+        if (!result) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_EXECUTION_ERROR;
+          discpump.enable(false);
+          return;
+        }
+        // Otherwise, go to state for monitoring pressure sensors
+        execution_status = IN_PROGRESS;
+        state = INTERNAL_STATE_INITIALIZING_MEDIUM;
+        time_cmd_operation = 0;
+      }
+      break;
+    case VOL_INTEGRATE_SETTING: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 5 bytes, don't do anything
+        // 3 bytes for cmd and UID, 1 for resetting the integrated flowrate, 1 for setting whether to perform integration
+        if (size != 5) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        bool reset_volume = buffer[4];
+
+        integrate_flowrate = buffer[3];
+        if (reset_volume) {
+          integrated_volume_uL = 0;
+        }
+
+        execution_status = COMPLETED_WITHOUT_ERRORS;
+        state = INTERNAL_STATE_IDLE;
+      }
+      break;
+    case LOAD_FLUID_VOLUME: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 10 bytes, don't do anything
+        // 3 bytes for cmd and UID, 1 for setting the control type, 2 for setpoint (if applicable), 2 for timeout, 2 for volume setpoint
+        if (size != 10) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+
+        ClosedLoopType_t type = buffer[3];
+        timeout_duration = uint16_t((buffer[6] << 8) + buffer[7]);
+        cmd_data = uint16_t((buffer[8] << 8) + buffer[9]);
+        // Setpoint format depends on the closed loop type
+        // The only valid options are vaccuum PID, fluid in BB, and open loop (fluid in PID is not implemeneted)
+        switch (type) {
+          case FLUID_IN_BANG_BANG: {
+              // Ensure only this loop is enabled
+              disableControlLoops();
+              discpump.enable(true);
+              fluid_in_bb.begin();
+            }
+            break;
+          case VACUUM_PID: {
+              // Convert to closed-loop pressure setpoint
+              disableControlLoops();
+              discpump.enable(true);
+              pressure_vacuum_pid.begin();
+
+              global_pid_setpoint = uint16_t((buffer[4] << 8) + buffer[5]) * SSCX_PSI_MIN / UINT16_MAX;
+            }
+            break;
+          case OPEN_LOOP_CTRL: {
+              // Convert to open loop power setpoint
+              double pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]) / UINT16_MAX;
+              pwr_setting *= TTP_MAX_PWR;
+              disableControlLoops();
+              if (pwr_setting > 0) {
+                discpump.enable(true);
+              }
+              else {
+                discpump.enable(false);
+              }
+              bool result = discpump.set_target(pwr_setting);
+              if (!result) {
+                state = INTERNAL_STATE_IDLE;
+                execution_status = CMD_EXECUTION_ERROR;
+                discpump.enable(false);
+                return;
+              }
+            }
+            break;
+          default: {
+              state = INTERNAL_STATE_IDLE;
+              execution_status = CMD_INVALID;
+              return;
+            }
+            break;
+        }
+        // We want to integrate the flowrate!
+        integrate_flowrate = true;
+        // set valves
+        valves.transfer(FLUID_TO_RESERVOIR);
+
+        execution_status = IN_PROGRESS;
+        state = INTERNAL_STATE_LOADING_MEDIUM;
+        time_cmd_operation = 0;
+      }
+      break;
+    case UNLOAD_FLUID_VOLUME: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 10 bytes, don't do anything
+        // 3 bytes for cmd and UID, 1 for setting the control type, 2 for setpoint (if applicable), 2 for timeout, 2 for volume setpoint
+
+        if (size != 10) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+
+        ClosedLoopType_t type = buffer[3];
+        timeout_duration = uint16_t((buffer[6] << 8) + buffer[7]);
+        cmd_data = uint16_t((buffer[8] << 8) + buffer[9]);
+        // Setpoint format depends on the closed loop type
+        // The only valid options are pressure PID, fluid out BB, fluid out PID, and open loop
+        switch (type) {
+          case FLUID_OUT_BANG_BANG: {
+              disableControlLoops();
+              discpump.enable(true);
+              fluid_out_bb.begin();;
+            }
+            break;
+          case FLUID_OUT_PID: {
+              global_pid_setpoint = uint16_t((buffer[4] << 8) + buffer[5]) * SLF3X_FS_VAL_uL_MIN / UINT16_MAX;
+              disableControlLoops();
+              discpump.enable(true);
+              fluid_out_pid.begin();
+            }
+            break;
+          case PRESSURE_PID: {
+              global_pid_setpoint = uint16_t((buffer[4] << 8) + buffer[5]) * SSCX_PSI_MAX / UINT16_MAX;
+              disableControlLoops();
+              discpump.enable(true);
+              pressure_press_pid.begin();
+            }
+            break;
+          case OPEN_LOOP_CTRL: {
+              // Convert to open loop power setpoint
+              double pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]) / UINT16_MAX;
+              pwr_setting *= TTP_MAX_PWR;
+              disableControlLoops();
+              if (pwr_setting > 0) {
+                discpump.enable(true);
+              }
+              else {
+                discpump.enable(false);
+              }
+              bool result = discpump.set_target(pwr_setting);
+              if (!result) {
+                state = INTERNAL_STATE_IDLE;
+                execution_status = CMD_EXECUTION_ERROR;
+                discpump.enable(false);
+                return;
+              }
+            }
+            break;
+          default: {
+              state = INTERNAL_STATE_IDLE;
+              execution_status = CMD_INVALID;
+              return;
+            }
+        }
+        // We want to integrate the flowrate!
+        integrate_flowrate = true;
+        integrated_volume_uL = 0;
+        // set valves
+        valves.transfer(FLUID_TO_CHAMBER);
+
+        execution_status = IN_PROGRESS;
+        state = INTERNAL_STATE_UNLOADING;
+        time_cmd_operation = 0;
+      }
+      break;
+    case VENT_VB0: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 6 bytes, don't do anything
+        // 3 bytes for cmd and UID, 1 for vacuum threshold, 2 for timeout
+        if (size != 6) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+
+        disableControlLoops();
+        valves.transfer(VALVES_VENT_VB0);
+
+        timeout_duration = uint16_t((buffer[4] << 8) + buffer[5]);
+        cmd_data = buffer[3];
+
+        execution_status = IN_PROGRESS;
+        state = INTERNAL_STATE_VENT_VB0;
+        time_cmd_operation = 0;
+      }
     default:
       state = INTERNAL_STATE_IDLE;
       execution_status = CMD_INVALID;
