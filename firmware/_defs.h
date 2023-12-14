@@ -57,6 +57,7 @@ enum InternalState_t {
   INTERNAL_STATE_CLEARING            = 5,
   INTERNAL_STATE_MOVING_ROTARY       = 6,
   INTERNAL_STATE_CALIB_FLUID         = 7,
+  INTERNAL_STATE_REMOVING            = 8,
 };
 
 enum CommandExecution_t {
@@ -81,6 +82,7 @@ enum ValvesStates_t {
   FLUID_TO_RESERVOIR = 0b0000000000010111,
   FLUID_STOP_FLOW    = 0b0000000000010101,
   VALVES_VENT_VB0    = 0b0000000000110101,
+  FLUID_TO_VB1       = 0b0000000000011000,
 };
 
 enum SerialCommands_t {
@@ -105,4 +107,5 @@ enum SerialCommands_t {
   UNLOAD_FLUID_VOLUME          = 18,
   VENT_VB0                     = 19,
   VOL_INTEGRATE_SETTING        = 20,
+  REMOVE_ALL_MEDIUM            = 21,
 };

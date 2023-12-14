@@ -72,6 +72,8 @@ volatile double             integrated_volume_uL;
 volatile uint32_t           timeout_duration;
 volatile uint32_t           cmd_data;
 volatile bool               integrate_flowrate;
+// Track peak pressure - for determining when the line is empty
+int16_t peak_pressure = 0;
 
 void setup() {
   // Initialize serial communications with the host computer
@@ -274,6 +276,7 @@ void loop() {
             state = INTERNAL_STATE_IDLE;
             execution_status = CMD_EXECUTION_ERROR;
             // Prevent fluid flow
+            disableControlLoops();
             discpump.set_target(0);
             discpump.enable(false);
             valves.transfer(FLUID_STOP_FLOW);
@@ -282,6 +285,7 @@ void loop() {
             state = INTERNAL_STATE_IDLE;
             execution_status = COMPLETED_WITHOUT_ERRORS;
             // Prevent fluid flow
+            disableControlLoops();
             discpump.set_target(0);
             discpump.enable(false);
             valves.transfer(FLUID_STOP_FLOW);
@@ -319,7 +323,35 @@ void loop() {
           }
         }
         break;
-
+      case INTERNAL_STATE_REMOVING: {
+          // Keep pumping until we stop seeing spikes in pressure
+          int16_t target_pressure = (state == INTERNAL_STATE_REMOVING) ? pressure_results[0] : pressure_results[1];
+          target_pressure = abs(target_pressure);
+          peak_pressure = max(peak_pressure, target_pressure);
+          // Check timeout
+          if (time_since_cmd_started > timeout_duration) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = CMD_EXECUTION_ERROR;
+            // Prevent fluid flow
+            discpump.set_target(0);
+            discpump.enable(false);
+            valves.transfer(FLUID_STOP_FLOW);
+          }
+          // Check for spikes in pressure, reset count if detected
+          else if (target_pressure == peak_pressure) {
+            time_cmd_operation = 0;
+          }
+          // Check if sufficient time has passed since the last spike
+          else if (time_cmd_operation > cmd_data) {
+            state = INTERNAL_STATE_IDLE;
+            execution_status = COMPLETED_WITHOUT_ERRORS;
+            // Prevent fluid flow
+            discpump.set_target(0);
+            discpump.enable(false);
+            valves.transfer(FLUID_STOP_FLOW);
+          }
+        }
+        break;
       default:
         break;
     }
@@ -427,7 +459,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
     return;
   }
   // Get the received command
-  cmd_rxed = buffer[2];
+  cmd_rxed = static_cast<SerialCommands_t>(buffer[2]);
   // Get the cmd uid
   cmd_uid = (buffer[0] << 8) + buffer[1];
   // we got a new command!
@@ -629,7 +661,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         double t_low, t_high, o_min, o_max;
         uint32_t tstep;
 
-        ClosedLoopType_t type = buffer[3];
+        ClosedLoopType_t type = static_cast<ClosedLoopType_t>(buffer[3]);
 
         t_low  = (((buffer[4] << 8) + buffer[5]) / INT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
         t_high = (((buffer[6] << 8) + buffer[7]) / INT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
@@ -674,7 +706,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         double o_min, o_max;
         uint32_t tstep;
 
-        ClosedLoopType_t type = buffer[3];
+        ClosedLoopType_t type = static_cast<ClosedLoopType_t>(buffer[3]);
 
         kp   = (((buffer[4] << 8) + buffer[5])  / INT16_MAX) * KP_MAX;
         ki   = (((buffer[6] << 8) + buffer[7])  / INT16_MAX) * KI_MAX;
@@ -838,7 +870,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           execution_status = CMD_INVALID;
           return;
         }
-        ClosedLoopType_t type = buffer[3];
+        ClosedLoopType_t type = static_cast<ClosedLoopType_t>(buffer[3]);
 
         switch (type) {
           case FLUID_OUT_BANG_BANG:
@@ -1005,7 +1037,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           return;
         }
 
-        ClosedLoopType_t type = buffer[3];
+        ClosedLoopType_t type = static_cast<ClosedLoopType_t>(buffer[3]);
         timeout_duration = uint16_t((buffer[6] << 8) + buffer[7]);
         cmd_data = uint16_t((buffer[8] << 8) + buffer[9]);
         // Setpoint format depends on the closed loop type
@@ -1075,7 +1107,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           return;
         }
 
-        ClosedLoopType_t type = buffer[3];
+        ClosedLoopType_t type = static_cast<ClosedLoopType_t>(buffer[3]);
         timeout_duration = uint16_t((buffer[6] << 8) + buffer[7]);
         cmd_data = uint16_t((buffer[8] << 8) + buffer[9]);
         // Setpoint format depends on the closed loop type
@@ -1158,6 +1190,48 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         state = INTERNAL_STATE_VENT_VB0;
         time_cmd_operation = 0;
       }
+      break;
+
+    case REMOVE_ALL_MEDIUM: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 9 bytes, don't do anything
+        // 3 bytes for cmd and UID, 2 for power, 2 for timeout time, 2 for debounce interval
+        if (size != 9) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+
+        // Unpack data
+        double pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]) / TTP_MAX_PWR;
+        pwr_setting *= UINT16_MAX;
+        timeout_duration = uint16_t((buffer[5] << 8) + buffer[6]);
+        cmd_data =  uint16_t((buffer[7] << 8) + buffer[8]);
+        // Set valves
+        valves.transfer(FLUID_TO_VB1);
+        // Set open-loop disc pump power
+        disableControlLoops();
+        if (pwr_setting > 0) {
+          discpump.enable(true);
+        }
+        else {
+          discpump.enable(false);
+        }
+        bool result = discpump.set_target(pwr_setting);
+
+        // If we failed to get the disc pump working, turn it off and return with error
+        if (!result) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_EXECUTION_ERROR;
+          discpump.enable(false);
+          return;
+        }
+        // Otherwise, go to state for monitoring fluid sensors
+        execution_status = IN_PROGRESS;
+        state = INTERNAL_STATE_REMOVING;
+        time_cmd_operation = 0;
+      }
+      break;
     default:
       state = INTERNAL_STATE_IDLE;
       execution_status = CMD_INVALID;
