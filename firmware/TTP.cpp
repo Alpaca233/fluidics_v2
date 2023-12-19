@@ -77,6 +77,7 @@ TTP::TTP() {
 */
 bool TTP::begin(HardwareSerial &s) {
   s_ = &s;
+  return true;
 }
 /*
   -----------------------------------------------------------------------------
@@ -370,6 +371,7 @@ bool TTP::write_register(TTPRegisterMap_t reg, float dat) {
 bool TTP::init(int16_t pwr_lim, uint8_t src, uint8_t mode, uint8_t stream) {
   int16_t time_0;
   bool success = true;
+  pwr = 0;
 
   s_->begin(TTP_BAUDRATE);
 

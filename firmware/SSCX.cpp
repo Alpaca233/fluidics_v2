@@ -271,9 +271,10 @@ float SSCX_to_celsius(int16_t raw_temp) {
 */
 float SSCX_to_psi(int16_t raw_press) {
   float pressure = constrain(raw_press, SSCX_OUT_MIN, SSCX_OUT_MAX);
-  return (pressure - SSCX_OUT_MIN) * SSCX_OUT_SCALE + SSCX_PSI_MIN;
+  return (pressure * SSCX_OUT_SCALE) + SSCX_PSI_MIN;
 }
 
 int16_t psi_to_SSCX(float psi) {
-  return (psi - SSCX_PSI_MIN) / (SSCX_OUT_SCALE) + SSCX_OUT_MIN;
+  float intermediate = (psi - SSCX_PSI_MIN) / (SSCX_OUT_SCALE);
+  return constrain(intermediate, SSCX_OUT_MIN, SSCX_OUT_MAX);
 }

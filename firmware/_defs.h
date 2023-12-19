@@ -28,7 +28,7 @@
 #define SELECTORVALVE_WIRE Wire
 #define SELECTORVALVE_QTY  2     // Only 2 are actually installed here
 #define SELECTORVALVE_MAX  5     // Support up to 5 valves  
-const uint8_t SELECTORVALVE_ADDRS[] = {0x1E, 0x0E, 0x00, 0x00, 0x00}; // 0x00 is dummy address
+const uint8_t SELECTORVALVE_ADDRS[] = {0x0E, 0x1E, 0x00, 0x00, 0x00}; // 0x00 is dummy address
 
 #define SLF3X_WIRE0   Wire
 #define SLF3X_WIRE1   Wire1
@@ -58,6 +58,7 @@ enum InternalState_t {
   INTERNAL_STATE_MOVING_ROTARY       = 6,
   INTERNAL_STATE_CALIB_FLUID         = 7,
   INTERNAL_STATE_REMOVING            = 8,
+  INTERNAL_STATE_DELAYING            = 9
 };
 
 enum CommandExecution_t {
@@ -108,4 +109,5 @@ enum SerialCommands_t {
   VENT_VB0                     = 19,
   VOL_INTEGRATE_SETTING        = 20,
   REMOVE_ALL_MEDIUM            = 21,
+  DELAY_MS                     = 22
 };
