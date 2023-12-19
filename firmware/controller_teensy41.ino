@@ -125,7 +125,7 @@ void loop() {
     int16_t flow_readings[3];
     flowsensor.read(flow_readings);
     bool flowsensor_fluid_present = !(flow_readings[SLF3X_FLAG_IDX] & SLF3X_AIR_IN_LINE);
-    double flowrate = flowsensor_fluid_present ? 0 : SLF3X_to_uLmin(flow_readings[SLF3X_FLOW_IDX]);
+    double flowrate = flowsensor_fluid_present ? SLF3X_to_uLmin(flow_readings[SLF3X_FLOW_IDX]) : 0;
 
     // DEBOUNCING
     if ((fs1 != 0) && (fs1 != OPX350_ERR)) {
@@ -274,7 +274,7 @@ void loop() {
           intermediate = (state == INTERNAL_STATE_LOADING_MEDIUM) ? -intermediate : intermediate;
           bool volume_threshold_reached = (intermediate >= cmd_data);
 
-          if (timed_out || flow_sensor_saturated || overfilled_reservoir || over_max ||  air_in_path) {
+          if (timed_out || overfilled_reservoir || over_max ) { // || flow_sensor_saturated ||  air_in_path 
             state = INTERNAL_STATE_IDLE;
             execution_status = CMD_EXECUTION_ERROR;
             // Prevent fluid flow
@@ -1099,8 +1099,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         // set valves
         valves.transfer(FLUID_TO_RESERVOIR);
 
-        //execution_status = IN_PROGRESS;
-        execution_status = CMD_INVALID;
+        execution_status = IN_PROGRESS;
         state = INTERNAL_STATE_LOADING_MEDIUM;
         time_cmd_operation = 0;
       }
