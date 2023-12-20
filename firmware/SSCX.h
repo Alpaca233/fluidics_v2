@@ -62,7 +62,7 @@ class SSCX{
     SSCX();
     SSCXStatus_t begin(TwoWire &w, uint8_t address);
     SSCXStatus_t begin(SPIClass &s, uint8_t chipsel);
-    SSCXStatus_t read(int16_t *readings);
+    SSCXStatus_t read(uint16_t *readings);
   
   private:
     uint8_t i2c_addr_;
@@ -74,8 +74,8 @@ class SSCX{
 };
 
 // Function headers
-float   SSCX_to_psi(int16_t raw_press);
-int16_t psi_to_SSCX(float psi);
-float   SSCX_to_celsius(int16_t raw_temp);
+float   SSCX_to_psi(uint16_t raw_press);
+uint16_t psi_to_SSCX(float psi);
+float   SSCX_to_celsius(uint16_t raw_temp);
 
 #endif /* SSCX_H_ */

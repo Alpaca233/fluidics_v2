@@ -45,6 +45,8 @@ RheoLink selectorvalves[SELECTORVALVE_QTY];
 SLF3X flowsensor;
 bool flowsensor_debounce = false;
 uint32_t flow_time;
+bool flowsensor_debounce_neg = false;
+uint32_t flow_time_neg;
 
 // SSCX pressure sensors
 SSCX pressuresensors[SSCX_QTY];
@@ -73,7 +75,9 @@ volatile uint32_t           timeout_duration;
 volatile uint32_t           cmd_data;
 volatile bool               integrate_flowrate;
 // Track peak pressure - for determining when the line is empty
-int16_t peak_pressure = 0;
+float peak_pressure = 0;
+// Track pressure scale form serial command
+volatile uint8_t pressure_scale = UINT8_MAX;
 
 void setup() {
   // Initialize serial communications with the host computer
@@ -115,8 +119,8 @@ void loop() {
       selectorvalve_status[i] = byte(selectorvalves[i].read_register(RheoLink_STATUS));
     }
     // PRESSURE
-    int16_t press_readings[2];
-    int16_t pressure_results[SSCX_QTY];
+    uint16_t press_readings[2];
+    uint16_t pressure_results[SSCX_QTY];
     for (uint8_t i = 0; i < SSCX_QTY; i++) {
       pressuresensors[i].read(press_readings);
       pressure_results[i] = press_readings[SSCX_PRESS_IDX];
@@ -128,7 +132,7 @@ void loop() {
     double flowrate = flowsensor_fluid_present ? SLF3X_to_uLmin(flow_readings[SLF3X_FLOW_IDX]) : 0;
 
     // DEBOUNCING
-    if ((fs1 != 0) && (fs1 != OPX350_ERR)) {
+    if (fs1 == OPX350_LOW) {
       fs_front_time = millis();
       fs_front_debounce = true;
     }
@@ -136,7 +140,7 @@ void loop() {
       fs_front_debounce = false;
     }
 
-    if ((fs2 != 0) && (fs2 != OPX350_ERR)) {
+    if (fs2 == OPX350_LOW) {
       fs_back_time = millis();
       fs_back_debounce = true;
     }
@@ -150,6 +154,14 @@ void loop() {
     }
     else if ((millis() - flow_time) > cmd_data) {
       flowsensor_debounce = false;
+    }
+
+    if (!flowsensor_fluid_present) {
+      flow_time_neg = millis();
+      flowsensor_debounce_neg = false;
+    }
+    else if ((millis() - flow_time_neg) > cmd_data) {
+      flowsensor_debounce_neg = true;
     }
 
     // INTEGRATION:
@@ -170,9 +182,10 @@ void loop() {
             execution_status = COMPLETED_WITHOUT_ERRORS;
           }
         }
+        break;
       case INTERNAL_STATE_IDLE: {
           // Check if we hit the back fluid sensor
-          if ((fs2 == OPX350_LOW) || (fs2 == OPX350_HIGH) || (fs2 == OPX350_RD_ER)) {
+          if (fs2 == OPX350_LOW) {
             // Turn off all control loops and disable the pump
             disableControlLoops();
             // Set the valves to minimize additional fluid flow
@@ -224,18 +237,21 @@ void loop() {
           else if (time_cmd_operation > cmd_data) {
             state = INTERNAL_STATE_IDLE;
             execution_status = COMPLETED_WITHOUT_ERRORS;
+            // Turn off all control loops and disable the pump
+            disableControlLoops();
           }
         }
         break;
       case INTERNAL_STATE_INITIALIZING_MEDIUM: {
-          bool fluids_present = flowsensor_fluid_present || (fs1 != 0);
+          // Want both fluid in the flow sensor and fluid sensor. This will cause overshoot!
+          bool fluids_present = flowsensor_debounce_neg && (fs1 == OPX350_LOW);
           // Check if we have timed out.
           if (time_since_cmd_started > timeout_duration) {
             state = INTERNAL_STATE_IDLE;
             execution_status = CMD_EXECUTION_ERROR;
           }
           // Error check - don't let fluid get past the second fluid sensor
-          else if (fs2 != 0) {
+          else if (fs_back_debounce) {
             state = INTERNAL_STATE_IDLE;
             execution_status = CMD_EXECUTION_ERROR;
             // Prevent fluid flow
@@ -261,12 +277,10 @@ void loop() {
           bool timed_out = (time_since_cmd_started > timeout_duration);
           //    flow sensor reading too high or too low
           bool flow_sensor_saturated = (constrain(flow_readings[SLF3X_FLOW_IDX], SSCX_OUT_MIN, SSCX_OUT_MAX) != flow_readings[SLF3X_FLOW_IDX]);
-          //    fluid hit the second fluid sensor
-          bool overfilled_reservoir = (fs2 != 0);
+          //    fluid hit the second fluid sensor (only important when loading medium, don't care if unloading)
+          bool overfilled_reservoir = (state == INTERNAL_STATE_LOADING_MEDIUM) ? (fs2 == OPX350_LOW) : false;
           //    integrated flowrate more than max
           bool over_max = (abs(integrated_volume_uL) > VOLUME_UL_MAX);
-          //    air in the fluid input
-          bool air_in_path = ((fs1 == 0) || !flowsensor_fluid_present);
 
           // Check if we withdrew the correct volume
           // Due to flow sensor orientation, it is negative volume when loading and positive when unloading
@@ -274,7 +288,7 @@ void loop() {
           intermediate = (state == INTERNAL_STATE_LOADING_MEDIUM) ? -intermediate : intermediate;
           bool volume_threshold_reached = (intermediate >= cmd_data);
 
-          if (timed_out || overfilled_reservoir || over_max ) { // || flow_sensor_saturated ||  air_in_path 
+          if (timed_out || overfilled_reservoir || over_max ) { // || flow_sensor_saturated
             state = INTERNAL_STATE_IDLE;
             execution_status = CMD_EXECUTION_ERROR;
             // Prevent fluid flow
@@ -319,11 +333,23 @@ void loop() {
           }
         }
         break;
+      case INTERNAL_STATE_EJECTING:
       case INTERNAL_STATE_REMOVING: {
           // Keep pumping until we stop seeing spikes in pressure
-          int16_t target_pressure = (state == INTERNAL_STATE_REMOVING) ? pressure_results[0] : pressure_results[1];
-          target_pressure = abs(target_pressure);
+          float target_pressure = 0;
+          if (state == INTERNAL_STATE_REMOVING) {
+            // negate vacuum for positive readings
+            target_pressure = -SSCX_to_psi(pressure_results[0]);
+          }
+          else if (state == INTERNAL_STATE_EJECTING) {
+            // read pressure sensor
+            target_pressure = SSCX_to_psi(pressure_results[1]);
+          }
+          // track peak
           peak_pressure = max(peak_pressure, target_pressure);
+          // wait until the pressure falls below (pressure_scale/UINT8_MAX) of the peak
+          float thresh_pressure = pressure_scale * peak_pressure;
+          thresh_pressure /= UINT8_MAX;
           // Check timeout
           if (time_since_cmd_started > timeout_duration) {
             state = INTERNAL_STATE_IDLE;
@@ -333,11 +359,11 @@ void loop() {
             discpump.enable(false);
             valves.transfer(FLUID_STOP_FLOW);
           }
-          // Check for spikes in pressure, reset count if detected
-          else if (target_pressure == peak_pressure) {
+          // Check for spikes in pressure, reset count if we aren't below the threshold
+          else if (target_pressure >= thresh_pressure) {
             time_cmd_operation = 0;
           }
-          // Check if sufficient time has passed since the last spike
+          // Check if sufficient time has passed since falling below the threshold
           else if (time_cmd_operation > cmd_data) {
             state = INTERNAL_STATE_IDLE;
             execution_status = COMPLETED_WITHOUT_ERRORS;
@@ -407,7 +433,7 @@ void sendStatusPacket() {
   buffer_tx[14] = byte(normed_power & 0xFF);
 
   // Get pressure readings
-  int16_t press_readings[2];
+  uint16_t press_readings[2];
   for (uint8_t i = 0; i < SSCX_QTY; i++) {
     pressuresensors[i].read(press_readings);
     buffer_tx[15 + (2 * i)] = byte(press_readings[SSCX_PRESS_IDX] >> 8);
@@ -417,9 +443,6 @@ void sendStatusPacket() {
     buffer_tx[15 + (2 * i)] = 0;
     buffer_tx[16 + (2 * i)] = 0;
   }
-  // debugging
-  buffer_tx[19] = byte(cmd_data >> 8);
-  buffer_tx[20] = byte(cmd_data & 0xFF);
 
   int16_t flow_readings[3];
   flowsensor.read(flow_readings);
@@ -429,12 +452,7 @@ void sendStatusPacket() {
   buffer_tx[25] = 0; // We don't have a second flow sensor
   buffer_tx[26] = 0;
 
-  // DEBUGGING
-  bool flowsensor_fluid_present = !(flow_readings[SLF3X_FLAG_IDX] & SLF3X_AIR_IN_LINE);
-  buffer_tx[25] = (fs1 != 0) + ((fs2 != 0) << 1) + (flowsensor_fluid_present << 2);
-  // END DEBUGGING
-
-  buffer_tx[27] = byte(time_since_cmd_started / 1000);
+  buffer_tx[27] = byte(time_since_cmd_started/ 1000); // byte(time_cmd_operation  / 1000);
 
   intermediate = (integrated_volume_uL / VOLUME_UL_MAX) * INT16_MAX;
   int16_t volume_ul_int16 = static_cast<int16_t>(intermediate);
@@ -489,6 +507,8 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         cmd_uid = 0;
         integrate_flowrate = false;
         integrated_volume_uL = 0;
+        peak_pressure = 0;
+        pressure_scale = UINT8_MAX;
       }
       break;
 
@@ -670,10 +690,10 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
 
         ClosedLoopType_t type = static_cast<ClosedLoopType_t>(buffer[3]);
 
-        t_low  = (((buffer[4] << 8) + buffer[5]) / INT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
-        t_high = (((buffer[6] << 8) + buffer[7]) / INT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
-        o_min = (((buffer[8] << 8) + buffer[9]) / INT16_MAX) * TTP_PWR_LIM_mW;
-        o_max = (((buffer[10] << 8) + buffer[11]) / INT16_MAX) * TTP_PWR_LIM_mW;
+        t_low  = (((buffer[4] << 8) + buffer[5]) / UINT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
+        t_high = (((buffer[6] << 8) + buffer[7]) / UINT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
+        o_min = (((buffer[8] << 8) + buffer[9]) / UINT16_MAX) * TTP_PWR_LIM_mW;
+        o_max = (((buffer[10] << 8) + buffer[11]) / UINT16_MAX) * TTP_PWR_LIM_mW;
         tstep = (buffer[12] << (8 * 3)) + (buffer[13] << (8 * 2)) + (buffer[14] << 8) + buffer[15];
 
         switch (type) {
@@ -715,12 +735,12 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
 
         ClosedLoopType_t type = static_cast<ClosedLoopType_t>(buffer[3]);
 
-        kp   = (((buffer[4] << 8) + buffer[5])  / INT16_MAX) * KP_MAX;
-        ki   = (((buffer[6] << 8) + buffer[7])  / INT16_MAX) * KI_MAX;
-        kd   = (((buffer[8] << 8) + buffer[9])  / INT16_MAX) * KD_MAX;
-        ilim = (((buffer[10] << 8) + buffer[11]) / INT16_MAX) * ILIM_MAX;
-        o_min = (((buffer[12] << 8) + buffer[13]) / INT16_MAX) * TTP_PWR_LIM_mW;
-        o_max = (((buffer[14] << 8) + buffer[15]) / INT16_MAX) * TTP_PWR_LIM_mW;
+        kp   = (((buffer[4] << 8) + buffer[5])  / UINT16_MAX) * KP_MAX;
+        ki   = (((buffer[6] << 8) + buffer[7])  / UINT16_MAX) * KI_MAX;
+        kd   = (((buffer[8] << 8) + buffer[9])  / UINT16_MAX) * KD_MAX;
+        ilim = (((buffer[10] << 8) + buffer[11]) / UINT16_MAX) * ILIM_MAX;
+        o_min = (((buffer[12] << 8) + buffer[13]) / UINT16_MAX) * TTP_PWR_LIM_mW;
+        o_max = (((buffer[14] << 8) + buffer[15]) / UINT16_MAX) * TTP_PWR_LIM_mW;
         tstep = (buffer[16] << (8 * 3)) + (buffer[17] << (8 * 2)) + (buffer[18] << 8) + buffer[19];
 
         switch (type) {
@@ -923,7 +943,58 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
 
       }
       break;
+    case REMOVE_ALL_MEDIUM:
+    case EJECT_MEDIUM: {
+        // Ensure the correct amount of data was sent
+        // If we don't see exactly 10 bytes, don't do anything
+        // 3 bytes for cmd and UID, 2 for power, 2 for timeout time, 2 for debounce interval, 1 for pressure scale
+        if (size != 10) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_INVALID;
+          return;
+        }
+        // Reset max pressure
+        peak_pressure = 0;
+        // Unpack data
+        float pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]);
+        timeout_duration = uint16_t((buffer[5] << 8) + buffer[6]);
+        cmd_data =  uint16_t((buffer[7] << 8) + buffer[8]);
+        pressure_scale = buffer[9];
 
+
+        if (cmd_rxed == REMOVE_ALL_MEDIUM) {
+          // Set valves
+          valves.transfer(FLUID_TO_VB1);
+          state = INTERNAL_STATE_REMOVING;
+        }
+        else if (cmd_rxed == EJECT_MEDIUM) {
+          // Set valves
+          valves.transfer(FLUID_TO_CHAMBER);
+          state = INTERNAL_STATE_EJECTING;
+        }
+
+        // Set open-loop disc pump power
+        disableControlLoops();
+        if (pwr_setting > 0) {
+          discpump.enable(true);
+        }
+        else {
+          discpump.enable(false);
+        }
+        bool result = discpump.set_target(pwr_setting);
+
+        // If we failed to get the disc pump working, turn it off and return with error
+        if (!result) {
+          state = INTERNAL_STATE_IDLE;
+          execution_status = CMD_EXECUTION_ERROR;
+          discpump.enable(false);
+          return;
+        }
+
+        execution_status = IN_PROGRESS;
+        time_cmd_operation = 0;
+      }
+      break;
     case CLEAR_LINES: {
         // Ensure the correct amount of data was sent
         // If we don't see exactly 9 bytes, don't do anything
@@ -964,8 +1035,8 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         }
         // Otherwise, go to state for monitoring fluid sensors
         execution_status = IN_PROGRESS;
-        state = INTERNAL_STATE_CLEARING;
         time_cmd_operation = 0;
+        state = INTERNAL_STATE_CLEARING;
       }
       break;
     case LOAD_FLUID_TO_SENSOR: {
@@ -977,15 +1048,10 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           execution_status = CMD_INVALID;
           return;
         }
-        // Check if bubble and flow sensors are initialized
-        if (!fluidsensor_front.init || !fluidsensor_back.init || !flowsensor.init) {
-          state = INTERNAL_STATE_IDLE;
-          execution_status = CMD_EXECUTION_ERROR;
-          return;
-        }
         // Unpack data
         float pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]);
         timeout_duration = uint16_t((buffer[5] << 8) + buffer[6]);
+        cmd_data = FLOWSENSOR_DB_TIME_MS;
         // Set valves
         valves.transfer(FLUID_TO_RESERVOIR);
         // Set open-loop disc pump power
@@ -1143,7 +1209,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
             break;
           case OPEN_LOOP_CTRL: {
               // Convert to open loop power setpoint
-              float pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]);
+              float pwr_setting = uint16_t((buffer[4] << 8) + buffer[5]);
               disableControlLoops();
               if (pwr_setting > 0) {
                 discpump.enable(true);
@@ -1195,46 +1261,6 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
 
         execution_status = IN_PROGRESS;
         state = INTERNAL_STATE_VENT_VB0;
-        time_cmd_operation = 0;
-      }
-      break;
-
-    case REMOVE_ALL_MEDIUM: {
-        // Ensure the correct amount of data was sent
-        // If we don't see exactly 9 bytes, don't do anything
-        // 3 bytes for cmd and UID, 2 for power, 2 for timeout time, 2 for debounce interval
-        if (size != 9) {
-          state = INTERNAL_STATE_IDLE;
-          execution_status = CMD_INVALID;
-          return;
-        }
-
-        // Unpack data
-        float pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]);
-        timeout_duration = uint16_t((buffer[5] << 8) + buffer[6]);
-        cmd_data =  uint16_t((buffer[7] << 8) + buffer[8]);
-        // Set valves
-        valves.transfer(FLUID_TO_VB1);
-        // Set open-loop disc pump power
-        disableControlLoops();
-        if (pwr_setting > 0) {
-          discpump.enable(true);
-        }
-        else {
-          discpump.enable(false);
-        }
-        bool result = discpump.set_target(pwr_setting);
-
-        // If we failed to get the disc pump working, turn it off and return with error
-        if (!result) {
-          state = INTERNAL_STATE_IDLE;
-          execution_status = CMD_EXECUTION_ERROR;
-          discpump.enable(false);
-          return;
-        }
-        // Otherwise, go to state for monitoring fluid sensors
-        execution_status = IN_PROGRESS;
-        state = INTERNAL_STATE_REMOVING;
         time_cmd_operation = 0;
       }
       break;

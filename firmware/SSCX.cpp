@@ -81,7 +81,7 @@ SSCX::SSCX() {
 */
 SSCXStatus_t SSCX::begin(TwoWire &w, uint8_t address) {
   // Initialize variables
-  int16_t readings[2];
+  uint16_t readings[2];
   // Set sensor type
   type_ = SSCX_I2C;
   // Initialize I2C
@@ -125,7 +125,7 @@ SSCXStatus_t SSCX::begin(TwoWire &w, uint8_t address) {
 */
 SSCXStatus_t SSCX::begin(SPIClass &s, uint8_t chipsel) {
   // Initialize variables
-  int16_t readings[2];
+  uint16_t readings[2];
   // Set sensor type
   type_ = SSCX_SPI;
   // Initialize SPI
@@ -170,7 +170,7 @@ SSCXStatus_t SSCX::begin(SPIClass &s, uint8_t chipsel) {
   DEPENDENCIES: Wire.h
   -----------------------------------------------------------------------------
 */
-SSCXStatus_t SSCX::read(int16_t *readings) {
+SSCXStatus_t SSCX::read(uint16_t *readings) {
   uint8_t    rx[4];   // store raw data
   uint8_t    err = 0; // assume no error
 
@@ -242,7 +242,7 @@ SSCXStatus_t SSCX::read(int16_t *readings) {
   DEPENDENCIES: None
   -----------------------------------------------------------------------------
 */
-float SSCX_to_celsius(int16_t raw_temp) {
+float SSCX_to_celsius(uint16_t raw_temp) {
   return (raw_temp * SSCX_TEMP_SCALE) + SSCX_TEMP_OFFSET;
 }
 
@@ -269,12 +269,12 @@ float SSCX_to_celsius(int16_t raw_temp) {
   DEPENDENCIES: None
   -----------------------------------------------------------------------------
 */
-float SSCX_to_psi(int16_t raw_press) {
+float SSCX_to_psi(uint16_t raw_press) {
   float pressure = constrain(raw_press, SSCX_OUT_MIN, SSCX_OUT_MAX);
   return (pressure * SSCX_OUT_SCALE) + SSCX_PSI_MIN;
 }
 
-int16_t psi_to_SSCX(float psi) {
+uint16_t psi_to_SSCX(float psi) {
   float intermediate = (psi - SSCX_PSI_MIN) / (SSCX_OUT_SCALE);
   return constrain(intermediate, SSCX_OUT_MIN, SSCX_OUT_MAX);
 }

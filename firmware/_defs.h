@@ -4,6 +4,7 @@
 #define SENSOR_INTERVAL_MS 20
 
 #define DEBOUNCE_TIME_MS 750
+#define FLOWSENSOR_DB_TIME_MS 15
 
 #define VOLUME_UL_MAX 5000
 
@@ -17,13 +18,13 @@
 #define VALVES_PWM  3
 #define VALVES_SPI     SPI
 
-#define FLUIDSENSORFRONT_A 27
-#define FLUIDSENSORFRONT_B 26
-#define FLUIDSENSORFRONT_C 31
+#define FLUIDSENSORFRONT_A 29
+#define FLUIDSENSORFRONT_B 28
+#define FLUIDSENSORFRONT_C 30
 
-#define FLUIDSENSORBACK_A  28
-#define FLUIDSENSORBACK_B  28
-#define FLUIDSENSORBACK_C  30
+#define FLUIDSENSORBACK_A  27
+#define FLUIDSENSORBACK_B  26
+#define FLUIDSENSORBACK_C  31
 
 #define SELECTORVALVE_WIRE Wire
 #define SELECTORVALVE_QTY  2     // Only 2 are actually installed here
@@ -58,7 +59,8 @@ enum InternalState_t {
   INTERNAL_STATE_MOVING_ROTARY       = 6,
   INTERNAL_STATE_CALIB_FLUID         = 7,
   INTERNAL_STATE_REMOVING            = 8,
-  INTERNAL_STATE_DELAYING            = 9
+  INTERNAL_STATE_DELAYING            = 9,
+  INTERNAL_STATE_EJECTING            = 10
 };
 
 enum CommandExecution_t {
@@ -109,5 +111,6 @@ enum SerialCommands_t {
   VENT_VB0                     = 19,
   VOL_INTEGRATE_SETTING        = 20,
   REMOVE_ALL_MEDIUM            = 21,
-  DELAY_MS                     = 22
+  DELAY_MS                     = 22,
+  EJECT_MEDIUM                 = 23
 };
