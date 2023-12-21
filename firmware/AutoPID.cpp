@@ -235,8 +235,8 @@ void AutoPID::run() {
   _lastStep = millis();
   _error = *_setpoint - (*_input * _sgn);
 
-  _integral += ((_error + _previousError) / 2) * _dTseconds;   // Riemann sum integral with filtering
-  _integral = constrain(_integral, -_windingLimit, _windingLimit); // Enforce wind-up limit
+  _integral += ((_error + _previousError) / 2.0) * _dTseconds;   // Riemann sum integral with filtering
+  _integral = constrain(_integral, -UINT16_MAX, UINT16_MAX); // Enforce wind-up limit
 
   _dError = (_error - _previousError) / _dTseconds;            // Differential error
   _previousError = _error;
@@ -284,6 +284,7 @@ AutoBangBang::AutoBangBang(double *input, double *output, float sgn) {
   _sgn = sgn / abs(sgn);
 
   _stopped = true; // Initially stopped
+  _bbstate = false;
 
   // Values are not yet initialized!
   _threshSet = false;
@@ -422,13 +423,13 @@ bool AutoBangBang::isStopped() {
 
   LOCAL VARIABLES:
     uint32_t _dT: Time in ms since last iteration
-    bool _newState: current state
 
   SHARED VARIABLES:
     double _threshLow, _threshHigh, _outputMin, _outputMax: Read from
     bool _stopped, _threshSet, _rangeSet, _timestepSet: Read from
     uint32_t _lastStep: Read from and written to
     float _sgn: Read from
+    bool _bbstate: current bang-bang state
 
     double *_input: Read from the variables pointed to
     double *_output: Write to the variable pointed to
@@ -440,7 +441,7 @@ bool AutoBangBang::isStopped() {
 */
 void AutoBangBang::run() {
   uint32_t _dT;
-  bool _newState;
+  double corrected_input = *_input * _sgn;
 
   // If stopped, don't do anything
   if (_stopped) {
@@ -460,21 +461,15 @@ void AutoBangBang::run() {
   // Otherwise, we are ready to perform the bang-bang calculation!
   _lastStep = millis();
   // get the new state - turn off if too high
-  if (*_input >= _threshHigh) {
-    _newState = false;
+  if (corrected_input >= _threshHigh) {
+    _bbstate = false;
   }
   // turn on if too low
-  else if (*_input <= _threshLow) {
-    _newState = true;
+  else if (corrected_input <= _threshLow) {
+    _bbstate = true;
   }
 
-  // use sgn to determine whether output should be the max or min value (invert behavior if sgn is negative)
-  if (_sgn > 0){
-    *_output = _newState ? _outputMax : _outputMin;
-  }
-  else {
-    *_output = _newState ? _outputMin : _outputMax;
-  }
+  *_output = _bbstate ? _outputMax : _outputMin;
 
   return;
 }

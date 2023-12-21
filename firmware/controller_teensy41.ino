@@ -23,9 +23,9 @@ double global_power_out = 0;
 double global_pid_setpoint = 0;
 double global_pressure_reading = 0;
 double global_vacuum_reading = 0;
-AutoBangBang fluid_in_bb(&global_flowrate_reading, &global_power_out, +1);
-AutoBangBang fluid_out_bb(&global_flowrate_reading, &global_power_out, -1);
-AutoPID fluid_out_pid(&global_flowrate_reading, &global_pid_setpoint, &global_power_out, -1);
+AutoBangBang fluid_in_bb(&global_flowrate_reading, &global_power_out, -1);
+AutoBangBang fluid_out_bb(&global_flowrate_reading, &global_power_out, +1);
+AutoPID fluid_out_pid(&global_flowrate_reading, &global_pid_setpoint, &global_power_out, +1);
 AutoPID pressure_press_pid(&global_pressure_reading, &global_pid_setpoint, &global_power_out, 1);
 AutoPID pressure_vacuum_pid(&global_vacuum_reading, &global_pid_setpoint, &global_power_out, -1);
 
@@ -36,7 +36,8 @@ NXP33996 valves;
 OPX350 fluidsensor_front, fluidsensor_back;
 bool fs_front_debounce = false;
 bool fs_back_debounce = false;
-uint32_t fs_front_time, fs_back_time;
+bool fs_back_debounce_neg = false;
+uint32_t fs_front_time, fs_back_time, fs_back_neg_time;
 
 // Selector valves
 RheoLink selectorvalves[SELECTORVALVE_QTY];
@@ -72,6 +73,7 @@ volatile uint16_t           cmd_uid;
 volatile SerialCommands_t   cmd_rxed;
 volatile double             integrated_volume_uL;
 volatile uint32_t           timeout_duration;
+volatile uint32_t           debounce_time;
 volatile uint32_t           cmd_data;
 volatile bool               integrate_flowrate;
 // Track peak pressure - for determining when the line is empty
@@ -132,35 +134,44 @@ void loop() {
     double flowrate = flowsensor_fluid_present ? SLF3X_to_uLmin(flow_readings[SLF3X_FLOW_IDX]) : 0;
 
     // DEBOUNCING
+    // If fluid sensor 1 detects fluid, latch high for debounce_time
     if (fs1 == OPX350_LOW) {
       fs_front_time = millis();
       fs_front_debounce = true;
     }
-    else if ((millis() - fs_front_time) > cmd_data) {
+    else if ((millis() - fs_front_time) > debounce_time) {
       fs_front_debounce = false;
     }
-
+    // If fluid sensor 2 detects fluid, latch high for debounce_time
     if (fs2 == OPX350_LOW) {
       fs_back_time = millis();
       fs_back_debounce = true;
     }
-    else if ((millis() - fs_back_time) > cmd_data) {
+    else if ((millis() - fs_back_time) > debounce_time) {
       fs_back_debounce = false;
     }
-
+    // If fluid sensor 2 detects air, latch low for debounce_time
+    if (fs2 != OPX350_LOW) {
+      fs_back_neg_time = millis();
+      fs_back_debounce_neg = false;
+    }
+    else if ((millis() - fs_back_neg_time) > debounce_time) {
+      fs_back_debounce_neg = true;
+    }
+    // If the flow sensor detects fluid, latch high for debounce_time
     if (flowsensor_fluid_present) {
       flow_time = millis();
       flowsensor_debounce = true;
     }
-    else if ((millis() - flow_time) > cmd_data) {
+    else if ((millis() - flow_time) > debounce_time) {
       flowsensor_debounce = false;
     }
-
+    // If the flow sensor detects air, latch low for debounce_time
     if (!flowsensor_fluid_present) {
       flow_time_neg = millis();
       flowsensor_debounce_neg = false;
     }
-    else if ((millis() - flow_time_neg) > cmd_data) {
+    else if ((millis() - flow_time_neg) > debounce_time) {
       flowsensor_debounce_neg = true;
     }
 
@@ -184,15 +195,16 @@ void loop() {
         }
         break;
       case INTERNAL_STATE_IDLE: {
+          // debug: get rid of error checking
           // Check if we hit the back fluid sensor
-          if (fs2 == OPX350_LOW) {
-            // Turn off all control loops and disable the pump
-            disableControlLoops();
-            // Set the valves to minimize additional fluid flow
-            valves.transfer(FLUID_TO_CHAMBER);
-            // Indicate an error has occured
-            execution_status = CMD_EXECUTION_ERROR;
-          }
+          //          if (fs2 == OPX350_LOW) {
+          //            // Turn off all control loops and disable the pump
+          //            disableControlLoops();
+          //            // Set the valves to minimize additional fluid flow
+          //            valves.transfer(FLUID_TO_CHAMBER);
+          //            // Indicate an error has occured
+          //            execution_status = CMD_EXECUTION_ERROR;
+          //          }
         }
         break;
       case INTERNAL_STATE_MOVING_ROTARY: {
@@ -251,14 +263,15 @@ void loop() {
             execution_status = CMD_EXECUTION_ERROR;
           }
           // Error check - don't let fluid get past the second fluid sensor
-          else if (fs_back_debounce) {
-            state = INTERNAL_STATE_IDLE;
-            execution_status = CMD_EXECUTION_ERROR;
-            // Prevent fluid flow
-            discpump.set_target(0);
-            discpump.enable(false);
-            valves.transfer(FLUID_STOP_FLOW);
-          }
+          // debug: get rid of error checking
+          //          else if (fs_back_debounce) {
+          //            state = INTERNAL_STATE_IDLE;
+          //            execution_status = CMD_EXECUTION_ERROR;
+          //            // Prevent fluid flow
+          //            discpump.set_target(0);
+          //            discpump.enable(false);
+          //            valves.transfer(FLUID_STOP_FLOW);
+          //          }
           // Otherwise, if there are fluids, we are done!
           else if (fluids_present) {
             state = INTERNAL_STATE_IDLE;
@@ -278,7 +291,7 @@ void loop() {
           //    flow sensor reading too high or too low
           bool flow_sensor_saturated = (constrain(flow_readings[SLF3X_FLOW_IDX], SSCX_OUT_MIN, SSCX_OUT_MAX) != flow_readings[SLF3X_FLOW_IDX]);
           //    fluid hit the second fluid sensor (only important when loading medium, don't care if unloading)
-          bool overfilled_reservoir = (state == INTERNAL_STATE_LOADING_MEDIUM) ? (fs2 == OPX350_LOW) : false;
+          bool overfilled_reservoir = (state == INTERNAL_STATE_LOADING_MEDIUM) ? flowsensor_debounce_neg : false;
           //    integrated flowrate more than max
           bool over_max = (abs(integrated_volume_uL) > VOLUME_UL_MAX);
 
@@ -287,8 +300,8 @@ void loop() {
           double intermediate =  UINT16_MAX * integrated_volume_uL / VOLUME_UL_MAX;
           intermediate = (state == INTERNAL_STATE_LOADING_MEDIUM) ? -intermediate : intermediate;
           bool volume_threshold_reached = (intermediate >= cmd_data);
-
-          if (timed_out || overfilled_reservoir || over_max ) { // || flow_sensor_saturated
+          // debug: get rid of error checking
+          if (timed_out || over_max) { // || overfilled_reservoir || flow_sensor_saturated
             state = INTERNAL_STATE_IDLE;
             execution_status = CMD_EXECUTION_ERROR;
             // Prevent fluid flow
@@ -345,8 +358,10 @@ void loop() {
             // read pressure sensor
             target_pressure = SSCX_to_psi(pressure_results[1]);
           }
-          // track peak
-          peak_pressure = max(peak_pressure, target_pressure);
+          // track peak after time delay
+          if (time_since_cmd_started >= min(3.0, timeout_duration / 15.0)) {
+            peak_pressure = max(peak_pressure, target_pressure);
+          }
           // wait until the pressure falls below (pressure_scale/UINT8_MAX) of the peak
           float thresh_pressure = pressure_scale * peak_pressure;
           thresh_pressure /= UINT8_MAX;
@@ -444,6 +459,27 @@ void sendStatusPacket() {
     buffer_tx[16 + (2 * i)] = 0;
   }
 
+  // debug: include peak pressure and target pressure
+  if (false) {
+    uint16_t peak = psi_to_SSCX(peak_pressure);
+    float temp = peak_pressure * pressure_scale / UINT8_MAX;
+    uint16_t target = psi_to_SSCX(temp);
+    buffer_tx[19] = peak >> 8;
+    buffer_tx[20] = peak & 0xFF;
+    buffer_tx[21] = target >> 8;
+    buffer_tx[22] = target & 0xFF;
+  }
+  // debug: include flowrate PID error and integral error
+  if (false){
+    uint16_t err = psi_to_SSCX(SSCX_PSI_MAX * constrain(fluid_out_pid._previousError, -TTP_MAX_PWR, TTP_MAX_PWR)/(2*TTP_MAX_PWR)); 
+    uint16_t ierr = psi_to_SSCX(SSCX_PSI_MAX * constrain(fluid_out_pid._integral, -UINT16_MAX, UINT16_MAX)/(2*UINT16_MAX));
+
+    buffer_tx[19] = err >> 8;
+    buffer_tx[20] = err & 0xFF;
+    buffer_tx[21] = ierr >> 8;
+    buffer_tx[22] = ierr & 0xFF;
+  }
+
   int16_t flow_readings[3];
   flowsensor.read(flow_readings);
   buffer_tx[23] = byte(flow_readings[SLF3X_FLOW_IDX] >> 8);
@@ -452,7 +488,7 @@ void sendStatusPacket() {
   buffer_tx[25] = 0; // We don't have a second flow sensor
   buffer_tx[26] = 0;
 
-  buffer_tx[27] = byte(time_since_cmd_started/ 1000); // byte(time_cmd_operation  / 1000);
+  buffer_tx[27] = byte(time_since_cmd_started / 1000); // byte(time_cmd_operation  / 1000);
 
   intermediate = (integrated_volume_uL / VOLUME_UL_MAX) * INT16_MAX;
   int16_t volume_ul_int16 = static_cast<int16_t>(intermediate);
@@ -680,7 +716,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         // Ensure the correct amount of data was sent
         // If we don't see exactly 16 bytes, don't do anything
         // 3 bytes for cmd and UID, 13 for initializing the controller
-        if (size != 15) {
+        if (size != 16) {
           state = INTERNAL_STATE_IDLE;
           execution_status = CMD_INVALID;
           return;
@@ -689,11 +725,13 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         uint32_t tstep;
 
         ClosedLoopType_t type = static_cast<ClosedLoopType_t>(buffer[3]);
-
-        t_low  = (((buffer[4] << 8) + buffer[5]) / UINT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
-        t_high = (((buffer[6] << 8) + buffer[7]) / UINT16_MAX) * SLF3X_MAX_VAL_uL_MIN;
-        o_min = (((buffer[8] << 8) + buffer[9]) / UINT16_MAX) * TTP_PWR_LIM_mW;
-        o_max = (((buffer[10] << 8) + buffer[11]) / UINT16_MAX) * TTP_PWR_LIM_mW;
+        double temp;
+        temp = ((double)(buffer[4] << 8) + buffer[5]) / SLF3X_SCALE_FACTOR_FLOW;
+        t_low  = temp;
+        temp = ((double)(buffer[6] << 8) + buffer[7]) / SLF3X_SCALE_FACTOR_FLOW;
+        t_high = temp;
+        o_min = ((double)(buffer[8] << 8) + buffer[9]);
+        o_max = ((double)(buffer[10] << 8) + buffer[11]);
         tstep = (buffer[12] << (8 * 3)) + (buffer[13] << (8 * 2)) + (buffer[14] << 8) + buffer[15];
 
         switch (type) {
@@ -729,18 +767,23 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           execution_status = CMD_INVALID;
           return;
         }
-        double kp, ki, kd, ilim;
+        double kp, ki, kd, ilim, temp;
         double o_min, o_max;
         uint32_t tstep;
 
         ClosedLoopType_t type = static_cast<ClosedLoopType_t>(buffer[3]);
+        temp = ((buffer[4] << 8) + buffer[5]) * KP_MAX;
+        kp   = temp / UINT16_MAX;
+        temp = ((buffer[6] << 8) + buffer[7]) * KI_MAX;
+        ki   = temp / UINT16_MAX;
+        temp = ((buffer[8] << 8) + buffer[9]) * KD_MAX;
+        kd   = temp / UINT16_MAX;
 
-        kp   = (((buffer[4] << 8) + buffer[5])  / UINT16_MAX) * KP_MAX;
-        ki   = (((buffer[6] << 8) + buffer[7])  / UINT16_MAX) * KI_MAX;
-        kd   = (((buffer[8] << 8) + buffer[9])  / UINT16_MAX) * KD_MAX;
-        ilim = (((buffer[10] << 8) + buffer[11]) / UINT16_MAX) * ILIM_MAX;
-        o_min = (((buffer[12] << 8) + buffer[13]) / UINT16_MAX) * TTP_PWR_LIM_mW;
-        o_max = (((buffer[14] << 8) + buffer[15]) / UINT16_MAX) * TTP_PWR_LIM_mW;
+        temp  = ((buffer[10] << 8) + buffer[11]) * ILIM_MAX;
+        ilim  = temp / UINT16_MAX;
+        o_min = ((buffer[12] << 8) + buffer[13]);
+        o_max = ((buffer[14] << 8) + buffer[15]);
+
         tstep = (buffer[16] << (8 * 3)) + (buffer[17] << (8 * 2)) + (buffer[18] << 8) + buffer[19];
 
         switch (type) {
@@ -788,7 +831,6 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         valves.transfer(setting);
         execution_status = COMPLETED_WITHOUT_ERRORS;
         state = INTERNAL_STATE_IDLE;
-
       }
       break;
 
@@ -958,7 +1000,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         // Unpack data
         float pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]);
         timeout_duration = uint16_t((buffer[5] << 8) + buffer[6]);
-        cmd_data =  uint16_t((buffer[7] << 8) + buffer[8]);
+        debounce_time =  uint16_t((buffer[7] << 8) + buffer[8]);
         pressure_scale = buffer[9];
 
 
@@ -1014,6 +1056,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         float pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]);
         timeout_duration = uint16_t((buffer[5] << 8) + buffer[6]);
         cmd_data =  uint16_t((buffer[7] << 8) + buffer[8]);
+        debounce_time = DEBOUNCE_TIME_MS;
         // Set valves
         valves.transfer(FLUID_CLEAR_LINES);
         // Set open-loop disc pump power
@@ -1051,7 +1094,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         // Unpack data
         float pwr_setting = uint16_t((buffer[3] << 8) + buffer[4]);
         timeout_duration = uint16_t((buffer[5] << 8) + buffer[6]);
-        cmd_data = FLOWSENSOR_DB_TIME_MS;
+        debounce_time = FLOWSENSOR_DB_TIME_MS;
         // Set valves
         valves.transfer(FLUID_TO_RESERVOIR);
         // Set open-loop disc pump power
@@ -1131,7 +1174,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
               discpump.enable(true);
               pressure_vacuum_pid.begin();
 
-              global_pid_setpoint = uint16_t((buffer[4] << 8) + buffer[5]) * SSCX_PSI_MIN / UINT16_MAX;
+              global_pid_setpoint = SSCX_to_psi(uint16_t((buffer[4] << 8) + buffer[5]));
             }
             break;
           case OPEN_LOOP_CTRL: {
@@ -1164,6 +1207,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         integrate_flowrate = true;
         // set valves
         valves.transfer(FLUID_TO_RESERVOIR);
+        debounce_time = DEBOUNCE_TIME_MS;
 
         execution_status = IN_PROGRESS;
         state = INTERNAL_STATE_LOADING_MEDIUM;
@@ -1194,14 +1238,15 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
             }
             break;
           case FLUID_OUT_PID: {
-              global_pid_setpoint = uint16_t((buffer[4] << 8) + buffer[5]) * SLF3X_FS_VAL_uL_MIN / UINT16_MAX;
+              global_pid_setpoint = uint16_t((buffer[4] << 8) + buffer[5]) * SLF3X_MAX_VAL_uL_MIN;
+              global_pid_setpoint /= UINT16_MAX;
               disableControlLoops();
               discpump.enable(true);
               fluid_out_pid.begin();
             }
             break;
           case PRESSURE_PID: {
-              global_pid_setpoint = uint16_t((buffer[4] << 8) + buffer[5]) * SSCX_PSI_MAX / UINT16_MAX;
+              global_pid_setpoint = SSCX_to_psi(uint16_t((buffer[4] << 8) + buffer[5]));
               disableControlLoops();
               discpump.enable(true);
               pressure_press_pid.begin();
@@ -1237,6 +1282,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         integrated_volume_uL = 0;
         // set valves
         valves.transfer(FLUID_TO_CHAMBER);
+        debounce_time = DEBOUNCE_TIME_MS;
 
         execution_status = IN_PROGRESS;
         state = INTERNAL_STATE_UNLOADING;

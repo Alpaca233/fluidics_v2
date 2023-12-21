@@ -53,11 +53,12 @@ class AutoPID {
     void stop();
     void reset();
     bool isStopped();
+    double _integral, _previousError;
     
   private:
     float _sgn;
     double _Kp, _Ki, _Kd, _windingLimit;
-    double _integral, _previousError;
+    //double _integral, _previousError;
     double *_input, *_setpoint, *_output;
     double _outputMin, _outputMax;
     uint32_t _timeStep, _lastStep;
@@ -82,7 +83,7 @@ class AutoBangBang {
     double *_input, *_output;
     double _outputMin, _outputMax;
     uint32_t _timeStep, _lastStep;
-    bool _stopped, _threshSet, _rangeSet, _timestepSet;
+    bool _stopped, _threshSet, _rangeSet, _timestepSet, _bbstate;
 };//class AutoBangBang
 
 #endif

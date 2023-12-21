@@ -3,15 +3,15 @@
 #define TX_INTERVAL_MS 60
 #define SENSOR_INTERVAL_MS 20
 
-#define DEBOUNCE_TIME_MS 750
-#define FLOWSENSOR_DB_TIME_MS 15
+#define DEBOUNCE_TIME_MS 150
+#define FLOWSENSOR_DB_TIME_MS 100
 
 #define VOLUME_UL_MAX 5000
 
-#define KP_MAX   128
-#define KI_MAX   128
-#define KD_MAX   128
-#define ILIM_MAX UINT32_MAX
+#define KP_MAX   8
+#define KI_MAX   1
+#define KD_MAX   8
+#define ILIM_MAX UINT16_MAX
 
 #define VALVES_RST  2
 #define VALVES_CS  10

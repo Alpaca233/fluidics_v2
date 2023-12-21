@@ -36,8 +36,8 @@
 
 #define SLF3X_N_TRIES 10
 
-#define SLF3X_MAX_VAL_uL_MIN 3520 // value saturates at this amount uL/min
-#define SLF3X_FS_VAL_uL_MIN  2000 // value accuracy diminishes when flowrate exceeds this threshold
+#define SLF3X_MAX_VAL_uL_MIN 3520.0 // value saturates at this amount uL/min
+#define SLF3X_FS_VAL_uL_MIN  2000.0 // value accuracy diminishes when flowrate exceeds this threshold
 
 enum SLF3X_SignalFlags_t {
   SLF3X_AIR_IN_LINE  = (1 << 0),
