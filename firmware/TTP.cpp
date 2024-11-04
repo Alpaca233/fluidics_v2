@@ -123,7 +123,7 @@ bool TTP::send_packet(char *tx_buffer, char *rx_buffer) {
   for (uint8_t i = 0; i < TTP_N_TRIES; i++) { // try writing multiple times
     rx_ptr = 0; // reset the rx pointer
     memset(rx_buffer, 0, TTP_BUFFER_SIZE); // reset the read buffer
-    s_->clear(); // clear stream's RX buffer
+//    s_->clear(); // clear stream's RX buffer
     s_->print(tx_buffer);
     s_->flush(); // Wait for any transmitted data still in buffers to actually transmit
 
