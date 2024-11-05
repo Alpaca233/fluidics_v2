@@ -37,7 +37,7 @@ const uint8_t SELECTORVALVE_ADDRS[] = {0x0E, 0x1E, 0x00, 0x00, 0x00}; // 0x00 is
 #define PERFORM_CRC  true
 
 #define SSCX_SPI     SPI
-#define SSCX_QTY      2 // Only 2 are installed here
+#define SSCX_QTY      0 // 0 are installed here
 #define SSCX_MAX      4 // Support up to 4 pressure sensors
 const uint8_t PRESSURE_CS[] = {37, 36, 35, 34}; // Only index 0 and 1 are populated on most boards
 
