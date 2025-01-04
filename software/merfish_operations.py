@@ -6,7 +6,6 @@ class MERFISHOperations():
         self.config = config
         self.sp = syringe_pump
         self.sv = selector_valves
-        super().__init__(self.config, self.sp, self.sv)
 
     def process_sequence(self, sequence):
         print(sequence)

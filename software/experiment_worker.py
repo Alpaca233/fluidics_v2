@@ -1,4 +1,4 @@
-from qtpy.QtCore import *
+from qtpy.QtCore import QThread, Signal as pyqtSignal
 import time
 import pandas as pd
 

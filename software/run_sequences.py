@@ -16,16 +16,16 @@ def parse_args():
         description='Run sequences from a CSV file'
     )
     parser.add_argument(
-        'path', required=True,
+        '--path', required=True,
         help='Path to the CSV file containing sequences'
     )
     parser.add_argument(
-        'application', required=True,
+        '--application', required=True,
         choices=['MERFISH', 'Open Chamber'],
         help='Your application type'
     )
     parser.add_argument(
-        'config', default='config.json',
+        '--config', default='config.json',
         help='Path to configuration file'
     )
     parser.add_argument(
@@ -73,7 +73,7 @@ def main():
 
         # Run experiment
         experiment_ops = MERFISHOperations(config, syringePump, selectorValveSystem)
-        worker = ExperimentWorker(experiment_ops, df)
+        worker = ExperimentWorker(experiment_ops, df, config)
         worker.error.connect(lambda msg: print(f"Error in running experiment: {msg}", file=sys.stderr))
         worker.finished.connect(lambda: print("Experiment completed"))
         worker.run()
