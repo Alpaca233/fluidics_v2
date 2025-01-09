@@ -1,6 +1,6 @@
-from controller import FluidController
-from _def import CMD_SET, MCU_CONSTANTS, COMMAND_STATUS, VALVE_POSITIONS
-from controller import SERIAL_NUMBER_DEBUGGING
+from control.controller import FluidController
+from control._def import CMD_SET, MCU_CONSTANTS, COMMAND_STATUS, VALVE_POSITIONS
+from control.controller import SERIAL_NUMBER_DEBUGGING
 
 PRESSURE_TEST = 5.0
 VACUUM_TEST = -2.0

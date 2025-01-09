@@ -1,5 +1,4 @@
-from controller import FluidControllerSimulation as FluidController
-from _def import CMD_SET
+from control._def import CMD_SET
 
 class SelectorValve():
     def __init__(self, fluid_controller, config, valve_id, initial_pos=1):

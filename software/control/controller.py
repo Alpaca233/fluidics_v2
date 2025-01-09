@@ -1,6 +1,6 @@
 from cobs import cobs
 import serial
-from _def import *
+from control._def import *
 import serial.tools.list_ports
 from datetime import datetime
 import os

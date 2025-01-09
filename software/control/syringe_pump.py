@@ -1,4 +1,4 @@
-import tecancavro
+import control.tecancavro
 import time
 import threading
 from serial.tools import list_ports

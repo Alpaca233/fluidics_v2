@@ -1,6 +1,6 @@
-from controller import FluidController
-from _def import CMD_SET, MCU_CONSTANTS
-from controller import SERIAL_NUMBER_DEBUGGING
+from control.controller import FluidController
+from control._def import CMD_SET, MCU_CONSTANTS
+from control.controller import SERIAL_NUMBER_DEBUGGING
 import time
 
 fc = FluidController(SERIAL_NUMBER_DEBUGGING, log_measurements=True, debug=True)

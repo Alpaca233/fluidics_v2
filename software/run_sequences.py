@@ -5,10 +5,10 @@ import time
 import threading
 import pandas as pd
 
-from selector_valve import SelectorValveSystem
+from control.selector_valve import SelectorValveSystem
 from merfish_operations import MERFISHOperations
 from experiment_worker import ExperimentWorker
-from _def import CMD_SET
+from control._def import CMD_SET
 
 
 def parse_args():
@@ -44,14 +44,14 @@ def main():
     args = parse_args()
 
     if args.simulation:
-        from controller import FluidControllerSimulation as FluidController
-        from syringe_pump import SyringePumpSimulation as SyringePump
+        from control.controller import FluidControllerSimulation as FluidController
+        from control.syringe_pump import SyringePumpSimulation as SyringePump
     else:
-        from controller import FluidController as FluidController
-        from syringe_pump import SyringePump as SyringePump
+        from control.controller import FluidController as FluidController
+        from control.syringe_pump import SyringePump as SyringePump
     '''
     if args.application == 'Open chamber':
-        from disc_pump import DiscPump
+        from control.disc_pump import DiscPump
     '''
     try:
         # Load sequences
