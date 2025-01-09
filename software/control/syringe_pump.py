@@ -51,7 +51,7 @@ class SyringePump:
 
     def execute(self, block_pump=False):
         self.is_busy = True
-        t = self.syringe.executeChain()
+        t = self.syringe.executeChain(minimal_reset=True)
         if block_pump:
             self.syringe.waitReady()
             self.is_busy = False
