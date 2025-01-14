@@ -44,6 +44,39 @@ def load_config(config_path='config.json'):
     with open(config_path, 'r') as f:
         return json.load(f)
 
+def initialize_hardware(simulation, config):
+    if simulation:
+        controller = FluidControllerSimulation(config['microcontroller']['serial_number'])
+        syringePump = SyringePumpSimulation(
+            sn=config['syringe_pump']['serial_number'],
+            syringe_ul=config['syringe_pump']['volume_ul'], 
+            speed_code_limit=config['syringe_pump']['speed_code_limit'],
+            waste_port=3)
+    else:
+        controller = FluidController(config['microcontroller']['serial_number'])
+        syringePump = SyringePump(
+            sn=config['syringe_pump']['serial_number'],
+            syringe_ul=config['syringe_pump']['volume_ul'], 
+            speed_code_limit=config['syringe_pump']['speed_code_limit'],
+            waste_port=3)
+
+    controller.begin()
+    controller.send_command(CMD_SET.CLEAR)
+
+    return controller, syringePump
+
+def update_progress(index, sequence_num, status):
+    print(f"Sequence {index} ({sequence_num}): {status}")
+
+def on_error(error_msg):
+    print(f"Error: {error_msg}")
+
+def on_finished():
+    print("Experiment completed")
+
+def on_estimate(time_to_finish, n_sequences):
+    print(f"Estimated time: {time_to_finish}s, Sequences: {n_sequences}")
+
 def main():
     args = parse_args()
 
@@ -54,40 +87,35 @@ def main():
         # Load config
         config = load_config(args.config)
 
-        if args.simulation:
-            # Initialize hardware objects
-            controller = FluidController(config['microcontroller']['serial_number'])
-            syringePump = SyringePump(
-                            sn=config['syringe_pump']['serial_number'],
-                            syringe_ul=config['syringe_pump']['volume_ul'], 
-                            speed_code_limit=config['syringe_pump']['speed_code_limit'],
-                            waste_port=3)
-        else:
-            # Initialize simulated hardware objects
-            controller = FluidControllerSimulation(config['microcontroller']['serial_number'])
-            syringePump = SyringePumpSimulation(
-                            sn=config['syringe_pump']['serial_number'],
-                            syringe_ul=config['syringe_pump']['volume_ul'], 
-                            speed_code_limit=config['syringe_pump']['speed_code_limit'],
-                            waste_port=3)
-        controller.begin()
-        controller.send_command(CMD_SET.CLEAR)
+        controller, syringePump = initialize_hardware(args.simulation, config)
+
         selectorValveSystem = SelectorValveSystem(controller, config)
-        if args.application == 'Open chamber':
+        if args.app == 'Open chamber':
             discPump = DiscPump(controller)
 
         # Run experiment
-        if args.application == 'MERFISH':
+        if args.app == 'MERFISH':
             experiment_ops = MERFISHOperations(config, syringePump, selectorValveSystem)
-        elif args.application == 'Open chamber':
+        elif args.app == 'Open chamber':
             experiment_ops = OpenChamberOperations(config, syringePump, selectorValveSystem, discPump)
-        worker = ExperimentWorker(experiment_ops, df, config)
-        worker.error.connect(lambda msg: print(f"Error in running experiment: {msg}", file=sys.stderr))
-        worker.finished.connect(lambda: print("Experiment completed"))
-        worker.run()
+
+        callbacks = {
+            'update_progress': update_progress,
+            'on_error': on_error,
+            'on_finished': on_finished,
+            'on_estimate': on_estimate
+        }
+
+        worker = ExperimentWorker(experiment_ops, df, config, callbacks)
+        thread = threading.Thread(target=worker.run)
+        thread.start()
+
+        thread.join()
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
+        if thread:
+            thread.join()
         sys.exit(1)
 
 if __name__ == '__main__':

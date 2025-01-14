@@ -1,23 +1,35 @@
-from qtpy.QtCore import QThread, Signal as pyqtSignal
 import time
 import pandas as pd
 
-class ExperimentWorker(QThread):
-    progress = pyqtSignal(int, int, str)
-    error = pyqtSignal(str)
-    finished = pyqtSignal()
-    estimate = pyqtSignal(float, int)
-
-    def __init__(self, experiment_ops, df, config):
-        super().__init__()
+class ExperimentWorker:
+    def __init__(self, experiment_ops, df, config, callbacks=None):
+        """
+        Initialize ExperimentWorker with callbacks instead of signals.
+        
+        Args:
+            experiment_ops: The experiment operations object
+            df: DataFrame containing sequences
+            config: Configuration dictionary
+            callbacks: Dictionary of callback functions with keys:
+                - 'update_progress': fn(index, sequence_num, status)
+                - 'on_error': fn(error_message)
+                - 'on_finished': fn()
+                - 'estimate_time': fn(time_to_finish, n_sequences)
+        """
 
         self.experiment_ops = experiment_ops
         self.sequences = df
         self.config = config
-        self.time_to_finish, self.n_sequences = self.get_time_to_finish()
-        self.estimate.emit(self.time_to_finish, self.n_sequences)
-
+        self.callbacks = callbacks or {}
         self.abort_requested = False
+
+        self.time_to_finish, self.n_sequences = self.get_time_to_finish()
+        self._call_callback('on_estimate', self.time_to_finish, self.n_sequences)
+
+    def _call_callback(self, name, *args):
+        """Safely call a callback if it exists."""
+        if self.callbacks.get(name):
+            self.callbacks[name](*args)
 
     def get_time_to_finish(self):
         total_time = 0
@@ -52,27 +64,32 @@ class ExperimentWorker(QThread):
             raise AbortRequested()
 
     def run(self):
-        current_sequence = 1
+        current_sequence = 0
         try:
             for index, seq in self.sequences.iterrows():
                 for _ in range(seq['repeat']):
                     try:
                         current_sequence += 1
-                        self.progress.emit(index, current_sequence, "Started")
+                        self._call_callback('update_progress', index, current_sequence, "Started")
                         self.experiment_ops.process_sequence(seq)
+
                         if seq['incubation_time'] > 0:
-                            self.progress.emit(index, current_sequence, "Incubating")
+                            self._call_callback('update_progress', index, current_sequence, "Incubating")
                             self.wait_for_incubation(seq['incubation_time'])
-                        self.progress.emit(index, current_sequence, "Completed")
+                        self._call_callback('update_progress', index, current_sequence, "Completed")
+
                     except AbortRequested:
-                        self.error.emit("Operation aborted by user")
+                        self._call_callback('on_error', "Operation aborted by user")
+                        return
                     except Exception as e:
-                        self.error.emit(f"Error processing sequence {index} (repeat {repeat + 1}): {str(e)}")
+                        self._call_callback('on_error', 
+                            f"Error processing sequence {index} (repeat {repeat + 1}): {str(e)}")
+                        return
 
         except Exception as e:
-            self.error.emit(str(e))
+            self._call_callback('on_error', str(e))
         finally:
-            self.finished.emit()
+            self._call_callback('on_finished')
 
 class AbortRequested(Exception):
     pass
