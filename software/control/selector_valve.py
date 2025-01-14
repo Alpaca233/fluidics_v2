@@ -5,6 +5,7 @@ class SelectorValve():
         self.fc = fluid_controller
         self.id = valve_id
         self.position = initial_pos
+        self.tubing_fluid_amount_ul = self.config['selector_valves']['tubing_fluid_amount_to_valve_ul'][str(valve_id)]
         self.fc.send_command(CMD_SET.INITIALIZE_ROTARY, valve_id, SelectorValveSystem.PORTS_PER_VALVE)
         self.open(self.position)
         print(f"Selector valve id = {valve_id} initialized.")
@@ -49,17 +50,17 @@ class SelectorValveSystem():
             self.valves[i].open(10)
             self.fc.wait_for_completion()
 
-    def get_tubing_fluid_amount(self, port_index):
-        '''
+    def get_tubing_fluid_amount_to_valve(self, port_index):
+        # Return the tubing fluid amount from selector valve to sample. Used for fill_tubing_with.
         target_valve = ((port_index - 1) // (self.PORTS_PER_VALVE - 1))
         if target_valve == len(self.valves):
             target_valve -= 1
 
-        total_amount = 0 	# ul
-        for i in range(target_valve + 1):
-            total_amount += self.valves[i].tubing_fluid_amount
-        '''
-        return self.config['selector_valves']['tubing_fluid_amount_ul']
+        return self.valves[target_valve].tubing_fluid_amount_ul
+
+    def get_tubing_fluid_amount_to_port(self, port_index):
+        # Return the tubing fluid amount from reagent to selector valve port. Used for priming and cleaning up.
+        return self.config['selector_valves']['tubing_fluid_amount_to_port_ul']['port_' + str(port_index)]
 
     def get_port_names(self):
         names = []
