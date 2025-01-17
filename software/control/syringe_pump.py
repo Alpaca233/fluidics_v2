@@ -29,6 +29,7 @@ class SyringePump:
         self.volume = syringe_ul
         self.speed_code_limit = speed_code_limit
         self.range = 3000  # Property of the syringe pump
+        self.chained_volume = 0
 
         self.get_plunger_position()
 
@@ -42,7 +43,10 @@ class SyringePump:
         return self.plunger_pos
 
     def get_current_volume(self):
-        return self.volume * self.plunger_pos # ul
+        return self.volume * self.plunger_pos  # ul
+
+    def get_chained_volume(self):
+        return self.chained_volume  # ul
 
     def set_speed(self, speed_code):
         if speed_code == 27:
@@ -54,6 +58,7 @@ class SyringePump:
 
     def reset_chain(self):
         self.syringe.resetChain()
+        self.chained_volume = 0
 
     def execute(self, block_pump=False):
         self.is_busy = True
@@ -64,23 +69,27 @@ class SyringePump:
         else:
             self.wait_for_stop(t)
         self.get_plunger_position()
+        self.chained_volume = 0
 
     def get_time_to_finish(self):
         return self.syringe.exec_time
 
     def dispense(self, port, volume, speed_code):
-        self.set_speed(min(speed_code, self.speed_code_limit))
+        self.set_speed(max(speed_code, self.speed_code_limit))
         self.syringe.dispense(port, volume)
+        self.chained_volume = self.chained_volume - volume
         return self.get_time_to_finish()
 
     def extract(self, port, volume, speed_code):
-        self.set_speed(min(speed_code, self.speed_code_limit))
+        self.set_speed(max(speed_code, self.speed_code_limit))
         self.syringe.extract(port, volume)
+        self.chained_volume = self.chained_volume + volume
         return self.get_time_to_finish()
 
     def dispense_to_waste(self, speed_code=self.speed_code_limit):
-        self.set_speed(min(speed_code, self.speed_code_limit))
+        self.set_speed(max(speed_code, self.speed_code_limit))
         self.syringe.dispenseToWaste(retain_port=False)
+        self.chained_volume = 0
         return self.get_time_to_finish()
 
     def abort(self):
@@ -104,6 +113,7 @@ class SyringePump:
         :param flow_rate: ul/min
         :return: speed code (int)
         """
+        # TODO: move this to utils
         target_time = self.volume * 60 / target_flow_rate
 
         left = 0

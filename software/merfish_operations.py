@@ -9,8 +9,6 @@ class MERFISHOperations():
         self.extract_port = self.config['syringe_pump']['extract_port']
         self.speed_code_limit = self.config['syringe_pump']['speed_code_limit']
 
-        self.chained_volume = 0
-
     def process_sequence(self, sequence):
         print(sequence)
         try:
@@ -33,16 +31,14 @@ class MERFISHOperations():
             raise ValueError(f"Unknown sequence name: {sequence_name}")
 
     def _empty_syringe_pump_on_full(self, volume):
-        if self.sp.get_current_volume() + self.chained_volume + volume > 0.95 * self.config['syringe_pump']['volume_ul']:
+        if self.sp.get_current_volume() + self.sp.get_chained_volume() + volume > 0.95 * self.config['syringe_pump']['volume_ul']:
             self.sp.dispense_to_waste()
             self.sp.execute()
-            self.chained_volume = 0
 
     def flow_reagent(self, port, flow_rate, volume, fill_tubing_with_port):
         speed_code = self.sp.flow_rate_to_speed_code(flow_rate)
         try:
             self.sp.reset_chain()
-            self.chained_volume = 0
             self._empty_syringe_pump_on_full(volume)
             self.sv.open_port(port)
             self.sp.extract(self.extract_port, volume, speed_code)
@@ -59,7 +55,6 @@ class MERFISHOperations():
         speed_code = self.sp.flow_rate_to_speed_code(flow_rate)
         try:
             self.sp.reset_chain()
-            self.chained_volume = 0
             for i in range(1, self.sv.available_port_number + 1):
                 volume_to_port = self.config['selector_valves']['tubing_fluid_amount_to_port_ul']['port_' + str(i)]
                 if i != port and volume_to_port:
