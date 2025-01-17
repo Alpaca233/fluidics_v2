@@ -10,7 +10,7 @@ class SyringePump:
                         100.00, 120.00, 150.00, 200.00, 300.00, 333.33, 375.00, 428.57, 500.00, 600.00]
                         # Maps to speed code 0-40
 
-    def __init__(self, sn, syringe_ul, speed_code_limit, waste_port=3, num_ports=4, slope=14):
+    def __init__(self, sn, syringe_ul, speed_code_limit, waste_port, num_ports=4, slope=14, debug=False):
         if sn is not None:
             for d in list_ports.comports():
                 if d.serial_number == sn:
@@ -24,11 +24,13 @@ class SyringePump:
                             microstep=False, 
                             waste_port=waste_port, 
                             slope=slope, 
-                            debug=False, 
+                            debug=debug, 
                             debug_log_path='.')
         self.volume = syringe_ul
         self.speed_code_limit = speed_code_limit
-        self.range = 3000
+        self.range = 3000  # Property of the syringe pump
+
+        self.get_plunger_position()
 
         self.is_busy = False
 
@@ -36,7 +38,11 @@ class SyringePump:
 
     def get_plunger_position(self):
         position = self.syringe.getPlungerPos()
-        return position / self.range
+        self.plunger_pos = position / self.range
+        return self.plunger_pos
+
+    def get_current_volume(self):
+        return self.volume * self.plunger_pos # ul
 
     def set_speed(self, speed_code):
         if speed_code == 27:
@@ -57,22 +63,23 @@ class SyringePump:
             self.is_busy = False
         else:
             self.wait_for_stop(t)
+        self.get_plunger_position()
 
     def get_time_to_finish(self):
         return self.syringe.exec_time
 
     def dispense(self, port, volume, speed_code):
-        self.set_speed(speed_code)
+        self.set_speed(min(speed_code, self.speed_code_limit))
         self.syringe.dispense(port, volume)
         return self.get_time_to_finish()
 
     def extract(self, port, volume, speed_code):
-        self.set_speed(speed_code)
+        self.set_speed(min(speed_code, self.speed_code_limit))
         self.syringe.extract(port, volume)
         return self.get_time_to_finish()
 
-    def dispense_to_waste(self, speed_code):
-        self.set_speed(speed_code)
+    def dispense_to_waste(self, speed_code=self.speed_code_limit):
+        self.set_speed(min(speed_code, self.speed_code_limit))
         self.syringe.dispenseToWaste(retain_port=False)
         return self.get_time_to_finish()
 
@@ -127,7 +134,10 @@ class SyringePump:
 
         return left
 
-    def close(self):
+    def close(self, to_waste=False):
+        if to_waste:
+            self.dispense_to_waste(self.speed_code_limit)
+            self.execute()
         del self.com_link
 
 class SyringePumpSimulation():

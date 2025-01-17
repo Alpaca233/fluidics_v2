@@ -1,7 +1,7 @@
 sequence_name,fluidic_port,flow_rate,volume,incubation_time,repeat,fill_tubing_with,include
-Flow Bleaching Buffer,12,20000,500,0,1,0,1
-Hybridize,2,5000,2000,3,1,12,1
-Flow Wash Buffer,12,5000,2000,1,1,2,1
+Priming,12,20000,2000,0,1,0,1
+Flow Reagent,12,20000,500,0,1,0,1
+Flow Reagent,2,5000,2000,3,1,12,1
+Flow Reagent,12,5000,2000,1,1,2,1
 Flow Imaging Buffer,2,5000,1000,1,1,0,1
-Flow Bleaching Buffer,12,5000,1000,1,1,0,1
-Flow Wash Buffer,12,5000,1000,0,1,0,1
+Clean Up,12,20000,2000,0,1,0,1
