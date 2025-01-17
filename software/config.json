@@ -8,6 +8,7 @@
     "ports_allowed": [1, 2, 3],
     "waste_port": 3,
     "extract_port": 2,
+    "dispense_port": null,
     "speed_code_limit": 10
   },
   "selector_valves": {

@@ -10,7 +10,7 @@ from control.syringe_pump import SyringePumpSimulation, SyringePump
 from control.selector_valve import SelectorValveSystem
 from control.disc_pump import DiscPump
 from merfish_operations import MERFISHOperations
-#from open_chamber_operations import OpenChamberOperations
+from open_chamber_operations import OpenChamberOperations
 from experiment_worker import ExperimentWorker
 from control._def import CMD_SET
 

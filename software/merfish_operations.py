@@ -25,17 +25,24 @@ class MERFISHOperations():
             self.flow_reagent(port, flow_rate, volume, fill_tubing_with)
         elif sequence_name == "Priming":
             self.priming_or_clean_up(port, flow_rate, volume)
-        elif sequence_name == "Clean Up":
+        elif sequence_name in ("Priming", "Clean Up"):
             self.priming_or_clean_up(port, flow_rate, volume)
         else:
             raise ValueError(f"Unknown sequence name: {sequence_name}")
 
     def _empty_syringe_pump_on_full(self, volume):
         if self.sp.get_current_volume() + self.sp.get_chained_volume() + volume > 0.95 * self.config['syringe_pump']['volume_ul']:
-            self.sp.dispense_to_waste()
-            self.sp.execute()
+             try:
+                self.sp.dispense_to_waste()
+                self.sp.execute()
+            except Exception as e:
+                raise OperationError(f"Failed to empty syringe pump: {str(e)}")
 
     def flow_reagent(self, port, flow_rate, volume, fill_tubing_with_port):
+        """
+        Flow reagent from {port}. Finally, fill the tubings before sample with reagent from {fill_tubing_with_port}.
+        Only the ports on the last selector valve should be used for {fill_tubing_with_port}, usually a common buffer.
+        """
         speed_code = self.sp.flow_rate_to_speed_code(flow_rate)
         try:
             self.sp.reset_chain()
@@ -48,10 +55,16 @@ class MERFISHOperations():
                 self.sp.extract(self.extract_port, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
                 self.sp.execute()
 
-        except:
-            raise OperationError(f"Error in flow_reagent from {port}: {str(e)}")
+        except Exception as e:
+            raise OperationError(f"Error in flow_reagent from port: {port}: {str(e)}")
 
     def priming_or_clean_up(self, port, flow_rate, volume):
+        """
+        Fill the tubings from reagents to selector valves with the corresponding reagents. Finally, fill the tubings before 
+        syringe pump with {volume} of the reagent from {port}.
+        This method should work for both priming and cleaning. For priming, use a wash buffer for {port}; for cleaning, use water
+        for all ports.
+        """
         speed_code = self.sp.flow_rate_to_speed_code(flow_rate)
         try:
             self.sp.reset_chain()
@@ -67,5 +80,5 @@ class MERFISHOperations():
             self._empty_syringe_pump_on_full(volume)
             self.sp.extract(self.extract_port, volume, speed_code)
             self.sp.execute()
-        except:
+        except Exception as e:
             raise OperationError(f"Error in priming_or_clean_up: {str(e)}")
