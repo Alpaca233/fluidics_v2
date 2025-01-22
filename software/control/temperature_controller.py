@@ -35,6 +35,7 @@ class TCMController():
             return response
 
     def get_target_temperature(self, channel):
+        # channel: 'TC1' or 'TC2'
         response = self.send_command('TCADJTEMP?', channel)
         temp = float(response[14:])
         if channel == 'TC1':
@@ -44,6 +45,7 @@ class TCMController():
         return temp
 
     def set_target_temperature(self, channel, t):
+        # channel: 'TC1' or 'TC2'
         self.send_command('TCADJTEMP=' + str(t), channel)
         if channel == 'TC1':
             self.target_temperature_ch1 = t
@@ -78,7 +80,7 @@ class TCMController():
                     print("Temperature read callback failed")
 
 class TCMControllerSimulation():
-    def __init__(self, sn, baud_rate=57600, timeout=0.5):
+    def __init__(self, sn=None, baud_rate=57600, timeout=0.5):
         self.target_temperature_ch1 = self.get_target_temperature('TC1')
         self.target_temperature_ch2 = self.get_target_temperature('TC2')
 

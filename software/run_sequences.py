@@ -35,7 +35,7 @@ def parse_args():
     )
     return parser.parse_args()
 
-def load_config(config_path='config.json'):
+def load_config(config_path='./*config.json'):
     with open(config_path, 'r') as f:
         return json.load(f)
 

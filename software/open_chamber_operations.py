@@ -1,12 +1,13 @@
-from time import sleep
+from time import sleep, time
 from experiment_worker import AbortRequested, OperationError
 
 class OpenChamberOperations():
-    def __init__(self, config, syringe_pump, selector_valves, disc_pump):
+    def __init__(self, config, syringe_pump, selector_valves, disc_pump, temperature_controller=None):
         self.config = config
         self.sp = syringe_pump
         self.sv = selector_valves
         self.dp = disc_pump
+        self.tc = temperature_controller
 
     def process_sequence(self, sequence):
         # TODO: In open chamber sequences, use a 'time' or 'power' field for operating disc pump. Planning to do this after moving to YAML
@@ -29,6 +30,8 @@ class OpenChamberOperations():
             self.wash_with_constant_flow(port, flow_rate, volume, fill_tubing_with)
         elif sequence_name in ("Priming", "Clean Up"):
             self.priming_or_clean_up(port, flow_rate, volume)
+        elif sequence_name.startswith("Set Temperature"):
+            self.set_temperature(float(sequence_name.split()[-1]))
         else:
             raise ValueError(f"Unknown sequence name: {sequence_name}")
 
@@ -133,3 +136,17 @@ class OpenChamberOperations():
 
     def priming_or_clean_up(self, port, flow_rate, volume):
         raise OperationError("priming_or_clean_up not implemented")
+
+    # temporary temperature control sequences for testing, using Yexian M207
+    def set_temperature(self, target, timeout=300):
+        if self.tc:
+            self.tc.set_target_temperature('TC1', target)
+            self.tc.set_target_temperature('TC2', target)
+            start_time = time()
+            while True:
+                if abs(self.tc.t1 - target) <= 1 and abs(self.tc.t1 - target):
+                    break
+                if time() - start_time > timeout:
+                    raise TimeoutError(f"Temperature failed to stabilize within {timeout} seconds")
+
+            sleep(2)

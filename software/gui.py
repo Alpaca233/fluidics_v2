@@ -15,14 +15,16 @@ from control.controller import FluidController, FluidControllerSimulation
 from control.syringe_pump import SyringePump, SyringePumpSimulation
 from control.selector_valve import SelectorValveSystem
 from control.disc_pump import DiscPump
-from merfish_operations import MERFISHOperations
-from open_chamber_operations import OpenChamberOperations
+from control.temperature_controller import TCMController, TCMControllerSimulation
+
 from control._def import CMD_SET
 from control.tecancavro.tecanapi import TecanAPITimeout
+from merfish_operations import MERFISHOperations
+from open_chamber_operations import OpenChamberOperations
 
 import pandas as pd
 
-def load_config(config_path='config.json'):
+def load_config(config_path='./*config.json'):
     with open(config_path, 'r') as f:
         return json.load(f)
 
@@ -79,12 +81,14 @@ class PortDelegate(QStyledItemDelegate):
             self.parent().setIndexWidget(index, comboBox)
 
 class SequencesWidget(QWidget):
-    def __init__(self, config, syringe, selector_valves, disc_pump):
+    def __init__(self, config, syringe, selector_valves, disc_pump, temperature_controller):
         super().__init__()
         self.config = config
         self.syringePump = syringe
         self.selectorValveSystem = selector_valves
         self.discPump = disc_pump
+        self.temperatureController = temperature_controller
+
         self.sequences = pd.DataFrame()
         self.experiment_ops = None  # Will be set based on the selected application
         self.worker = None
@@ -92,7 +96,7 @@ class SequencesWidget(QWidget):
         if self.config['application'] == 'MERFISH':
             self.experiment_ops = MERFISHOperations(self.config, self.syringePump, self.selectorValveSystem)
         elif self.config['application'] == "Open Chamber":
-            self.experiment_ops = OpenChamberOperations(self.config, self.syringePump, self.selectorValveSystem, self.discPump)
+            self.experiment_ops = OpenChamberOperations(self.config, self.syringePump, self.selectorValveSystem, self.discPump, self.temperatureController)
 
         self.initUI()
 
@@ -602,8 +606,9 @@ class FluidicsControlGUI(QMainWindow):
         super().__init__()
         self.config = load_config()
         self.simulation = is_simulation
+        self.temperatureController = None
 
-        self.controller, self.syringePump = initialize_hardware(self.simulation, self.config)
+        initialize_hardware(self.simulation, self.config)
         self.selectorValveSystem = SelectorValveSystem(self.controller, self.config)
 
         if self.config['application'] == "Open Chamber":
@@ -621,8 +626,9 @@ class FluidicsControlGUI(QMainWindow):
         tabWidget = QTabWidget()
 
         # "Settings and Manual Control" tab
-        runExperimentsTab = SequencesWidget(self.config, self.syringePump, self.selectorValveSystem, self.discPump)
+        runExperimentsTab = SequencesWidget(self.config, self.syringePump, self.selectorValveSystem, self.discPump, self.temperatureController)
         manualControlTab = ManualControlWidget(self.config, self.syringePump, self.selectorValveSystem, self.discPump)
+        # TODO: integrate temperature controller ui
 
         tabWidget.addTab(runExperimentsTab, "Run Experiments")
         tabWidget.addTab(manualControlTab, "Settings and Manual Control")
@@ -631,19 +637,23 @@ class FluidicsControlGUI(QMainWindow):
 
     def initialize_hardware(simulation, config):
         if simulation:
-            controller = FluidControllerSimulation(config['microcontroller']['serial_number'])
-            syringePump = SyringePumpSimulation(
-                sn=config['syringe_pump']['serial_number'],
-                syringe_ul=config['syringe_pump']['volume_ul'], 
-                speed_code_limit=config['syringe_pump']['speed_code_limit'],
-                waste_port=3)
+            self.controller = FluidControllerSimulation(config['microcontroller']['serial_number'])
+            self.syringePump = SyringePumpSimulation(
+                                sn=config['syringe_pump']['serial_number'],
+                                syringe_ul=config['syringe_pump']['volume_ul'], 
+                                speed_code_limit=config['syringe_pump']['speed_code_limit'],
+                                waste_port=3)
+            if 'temperature_controller' in config and config['use_temperature_controller']:
+                self.temperatureController = TCMControllerSimulation()
         else:
-            controller = FluidController(config['microcontroller']['serial_number'])
-            syringePump = SyringePump(
-                sn=config['syringe_pump']['serial_number'],
-                syringe_ul=config['syringe_pump']['volume_ul'], 
-                speed_code_limit=config['syringe_pump']['speed_code_limit'],
-                waste_port=3)
+            self.controller = FluidController(config['microcontroller']['serial_number'])
+            self.syringePump = SyringePump(
+                                sn=config['syringe_pump']['serial_number'],
+                                syringe_ul=config['syringe_pump']['volume_ul'], 
+                                speed_code_limit=config['syringe_pump']['speed_code_limit'],
+                                waste_port=3)
+            if 'temperature_controller' in config and config['use_temperature_controller']:
+                self.temperatureController = TCMController(config['temperature_controller']['serial_number'])
 
         controller.begin()
         controller.send_command(CMD_SET.CLEAR)
