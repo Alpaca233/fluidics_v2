@@ -49,8 +49,6 @@ class SyringePump:
         return self.chained_volume  # ul
 
     def set_speed(self, speed_code):
-        if speed_code == 27:
-            speed_code += 1    # There is an error for this syringe pump model at speed code 27 so we are using speed code 28 instead
         self.syringe.setSpeed(speed_code)
 
     def set_wait(self, time_s):

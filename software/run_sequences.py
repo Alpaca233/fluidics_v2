@@ -24,11 +24,6 @@ def parse_args():
         help='Path to the CSV file containing sequences'
     )
     parser.add_argument(
-        '--app', required=True,
-        choices=['MERFISH', 'Open Chamber'],
-        help='Your application type'
-    )
-    parser.add_argument(
         '--config', default='config.json',
         help='Path to configuration file'
     )
@@ -90,13 +85,13 @@ def main():
         controller, syringePump = initialize_hardware(args.simulation, config)
 
         selectorValveSystem = SelectorValveSystem(controller, config)
-        if args.app == 'Open chamber':
+        if config['application'] == "Open Chamber":
             discPump = DiscPump(controller)
 
         # Run experiment
-        if args.app == 'MERFISH':
+        if config['application'] == "MERFISH":
             experiment_ops = MERFISHOperations(config, syringePump, selectorValveSystem)
-        elif args.app == 'Open chamber':
+        elif config['application'] == "Open Chamber":
             experiment_ops = OpenChamberOperations(config, syringePump, selectorValveSystem, discPump)
 
         callbacks = {
@@ -117,6 +112,8 @@ def main():
         if thread:
             thread.join()
         sys.exit(1)
+    finally:
+        syringePump.close()
 
 if __name__ == '__main__':
     main()
