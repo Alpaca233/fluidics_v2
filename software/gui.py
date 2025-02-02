@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
                              QHeaderView, QCheckBox, QFileDialog, QMessageBox, QComboBox,
                              QStyledItemDelegate, QSpinBox, QLabel, QProgressBar, QLineEdit, 
                              QGroupBox, QGridLayout, QSizePolicy)
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, Q_ARG, QMetaObject
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, Q_ARG, QMetaObject, QEvent, QCoreApplication
 from PyQt5.QtGui import QColor
 
 from control.controller import FluidController, FluidControllerSimulation
@@ -84,6 +84,15 @@ class PortDelegate(QStyledItemDelegate):
             comboBox.setCurrentText(str(index.data()))
             comboBox.currentTextChanged.connect(lambda text: self.parent().model().setData(index, text, Qt.EditRole))
             self.parent().setIndexWidget(index, comboBox)
+
+
+class WorkerEvent(QEvent):
+    EVENT_TYPE = QEvent.Type(QEvent.registerEventType())
+
+    def __init__(self, callback_name, *args):
+        super().__init__(WorkerEvent.EVENT_TYPE)
+        self.callback_name = callback_name
+        self.args = args
 
 
 class SequencesWidget(QWidget):
@@ -319,7 +328,7 @@ class SequencesWidget(QWidget):
         """Update the time remaining display and progress bar"""
         self.elapsed_time += 1  # Add one second
         remaining = max(0, self.total_time - self.elapsed_time)
-            
+
         # Update time label
         hours = int(remaining // 3600)
         minutes = int((remaining % 3600) // 60)
@@ -333,21 +342,30 @@ class SequencesWidget(QWidget):
         if remaining <= 0:
             self.timer.stop()
 
-    def setTimeEstimate(self, time_to_finish, n_sequences):
-        """Set up the time estimate and start the timer"""
-        self.total_time = time_to_finish
-        self.progressBar.setMaximum(100)  # For percentage
-        self.progressBar.setValue(0)    
+    def event(self, event):
+        if event.type() == WorkerEvent.EVENT_TYPE:
+            if event.callback_name == 'update_progress':
+                self._handle_progress(*event.args)
+            elif event.callback_name == 'show_error':
+                self._handle_error(*event.args)
+            elif event.callback_name == 'on_finished':
+                self._handle_finished()
+            elif event.callback_name == 'set_time_estimate':
+                self._handle_time_estimate(*event.args)
+            return True
+        return super().event(event)
 
-    def updateProgress(self, index, sequence_num, status):
-        """Update sequence counter and highlight current sequence"""
+    def _post_event(self, callback_name, *args):
+        QCoreApplication.postEvent(self, WorkerEvent(callback_name, *args))
+
+    def _handle_progress(self, index, sequence_num, status):
         self.sequenceLabel.setText(f"{sequence_num}/{self.total_sequences} sequences")
         self.highlightRow(index)
 
-    def handleError(self, error_message):
+    def _handle_error(self, error_message):
         QMessageBox.critical(self, "Error", error_message)
 
-    def onWorkerFinished(self):
+    def _handle_finished(self):
         self.runButton.setEnabled(True)
         self.abortButton.setEnabled(False)
         self.progressBar.setValue(0)
@@ -355,12 +373,29 @@ class SequencesWidget(QWidget):
         self.sequenceLabel.setText("0/0 sequences")
         self.timer.stop()
         self.highlightRow(None)
-
+        
         if self.worker:
             self.worker_thread.join()
             self.worker = None
-
+            
         QMessageBox.information(self, "Finished", "Sequence execution finished.")
+
+    def _handle_time_estimate(self, time_to_finish, n_sequences):
+        self.total_time = time_to_finish
+        self.progressBar.setMaximum(100)  # For percentage
+        self.progressBar.setValue(0)
+
+    def setTimeEstimate(self, time_to_finish, n_sequences):
+        self._post_event('set_time_estimate', time_to_finish, n_sequences)
+
+    def updateProgress(self, index, sequence_num, status):
+        self._post_event('update_progress', index, sequence_num, status)
+
+    def handleError(self, error_message):
+        self._post_event('show_error', error_message)
+
+    def onWorkerFinished(self):
+        self._post_event('on_finished')
 
     def abortSequences(self):
         if self.worker and self.experiment_ops:
