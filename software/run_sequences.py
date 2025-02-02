@@ -35,7 +35,7 @@ def parse_args():
     )
     return parser.parse_args()
 
-def load_config(config_path='./*config.json'):
+def load_config(config_path='./config.json'):
     with open(config_path, 'r') as f:
         return json.load(f)
 
@@ -47,6 +47,8 @@ def initialize_hardware(simulation, config):
             syringe_ul=config['syringe_pump']['volume_ul'], 
             speed_code_limit=config['syringe_pump']['speed_code_limit'],
             waste_port=3)
+        if 'temperature_controller' in config and config['use_temperature_controller']:
+                temperatureController = TCMControllerSimulation()
     else:
         controller = FluidController(config['microcontroller']['serial_number'])
         syringePump = SyringePump(
@@ -54,6 +56,8 @@ def initialize_hardware(simulation, config):
             syringe_ul=config['syringe_pump']['volume_ul'], 
             speed_code_limit=config['syringe_pump']['speed_code_limit'],
             waste_port=3)
+        if 'temperature_controller' in config and config['temperature_controller']['use_temperature_controller']:
+                temperatureController = TCMController(config['temperature_controller']['serial_number'])
 
     controller.begin()
     controller.send_command(CMD_SET.CLEAR)

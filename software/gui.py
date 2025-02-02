@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
                              QStyledItemDelegate, QSpinBox, QLabel, QProgressBar, QLineEdit, 
                              QGroupBox, QGridLayout, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, Q_ARG, QMetaObject
+from PyQt5.QtGui import QColor
 
 from control.controller import FluidController, FluidControllerSimulation
 from control.syringe_pump import SyringePump, SyringePumpSimulation
@@ -21,12 +22,15 @@ from control._def import CMD_SET
 from control.tecancavro.tecanapi import TecanAPITimeout
 from merfish_operations import MERFISHOperations
 from open_chamber_operations import OpenChamberOperations
+from experiment_worker import ExperimentWorker
 
 import pandas as pd
 
-def load_config(config_path='./*config.json'):
+
+def load_config(config_path='./config.json'):
     with open(config_path, 'r') as f:
         return json.load(f)
+
 
 class SpinBoxDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
@@ -54,6 +58,7 @@ class SpinBoxDelegate(QStyledItemDelegate):
             spinBox.valueChanged.connect(lambda value: self.parent().model().setData(index, value, Qt.EditRole))
             self.parent().setIndexWidget(index, spinBox)
 
+
 class PortDelegate(QStyledItemDelegate):
     def __init__(self, parent=None, ports=[]):
         super().__init__(parent)
@@ -79,6 +84,7 @@ class PortDelegate(QStyledItemDelegate):
             comboBox.setCurrentText(str(index.data()))
             comboBox.currentTextChanged.connect(lambda text: self.parent().model().setData(index, text, Qt.EditRole))
             self.parent().setIndexWidget(index, comboBox)
+
 
 class SequencesWidget(QWidget):
     def __init__(self, config, syringe, selector_valves, disc_pump, temperature_controller):
@@ -138,10 +144,16 @@ class SequencesWidget(QWidget):
         self.progressBar = QProgressBar()
         self.sequenceLabel = QLabel("0/0 sequences")
         self.timeLabel = QLabel("00:00:00 remaining")
-        layout.addWidget(self.sequenceLabel)
-        layout.addStretch()
-        layout.addWidget(self.timeLabel)
-        layout.addWidget(self.progressBar)
+
+        progressSection = QVBoxLayout()
+        progressLabelLayout = QHBoxLayout()
+        progressLabelLayout.addWidget(self.sequenceLabel)
+        progressLabelLayout.addStretch()
+        progressLabelLayout.addWidget(self.timeLabel)
+        progressSection.addLayout(progressLabelLayout)
+        progressSection.addWidget(self.progressBar)
+
+        layout.addLayout(progressSection)
 
         self.setLayout(layout)
 
@@ -180,37 +192,37 @@ class SequencesWidget(QWidget):
                 self.sequences = pd.read_csv(fileName, dtype={
                     'sequence_name': str,
                     'fluidic_port': int,
-                    'flow_rate': float,
-                    'volume': float,
-                    'incubation_time': float,
+                    'flow_rate': int,
+                    'volume': int,
+                    'incubation_time': int,
                     'repeat': int,
                     'fill_tubing_with': int,
                     'include': int
                 })
-                
+
                 # Update table
                 self.table.setRowCount(0)
                 for idx, row in self.sequences.iterrows():
                     rowPosition = self.table.rowCount()
                     self.table.insertRow(rowPosition)
-                    
+
                     # Set items
                     self.table.setItem(rowPosition, 0, QTableWidgetItem(row['sequence_name']))
                     self.table.setItem(rowPosition, 1, QTableWidgetItem(self.portDelegate.ports[row['fluidic_port'] - 1]))
-                    self.table.setItem(rowPosition, 2, QTableWidgetItem(row['flow_rate']))
-                    self.table.setItem(rowPosition, 3, QTableWidgetItem(row['volume']))
-                    self.table.setItem(rowPosition, 4, QTableWidgetItem(row['incubation_time']))
-                    self.table.setItem(rowPosition, 5, QTableWidgetItem(row['repeat']))
-                    self.table.setItem(rowPosition, 6, QTableWidgetItem(row['fill_tubing_with']))
-                    
+                    self.table.setItem(rowPosition, 2, QTableWidgetItem(str(row['flow_rate'])))
+                    self.table.setItem(rowPosition, 3, QTableWidgetItem(str(row['volume'])))
+                    self.table.setItem(rowPosition, 4, QTableWidgetItem(str(row['incubation_time'])))
+                    self.table.setItem(rowPosition, 5, QTableWidgetItem(str(row['repeat'])))
+                    self.table.setItem(rowPosition, 6, QTableWidgetItem(str(row['fill_tubing_with'])))
+
                     # Set checkbox
                     checkbox = QCheckBox()
                     checkbox.setChecked(row['include'] == 1)
                     self.table.setCellWidget(rowPosition, 7, checkbox)
-                    
+
                     # Make sequence name non-editable
                     self.table.item(rowPosition, 0).setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                    
+
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load CSV: {str(e)}")
                 return
@@ -234,7 +246,7 @@ class SequencesWidget(QWidget):
         for row in range(self.table.rowCount()):
             row_data = {
                 'sequence_name': self.table.item(row, 0).text(),
-                'fluidic_port': self.table.cellWidget(row, 1).currentIndex() + 1 if self.table.cellWidget(row, 1) else int(self.table.item(row, 1).text().split()[0]),
+                'fluidic_port': (self.table.cellWidget(row, 1).currentIndex() + 1),
                 'flow_rate': float(self.table.item(row, 2).text()),
                 'volume': float(self.table.item(row, 3).text()),
                 'incubation_time': float(self.table.item(row, 4).text()),
@@ -278,7 +290,7 @@ class SequencesWidget(QWidget):
 
     def runSelectedSequences(self):
         # TODO: map speed codes
-        selected_sequences = self.getSelectedSequencesDF(True)
+        selected_sequences = self.getSequencesDF(True)
         self.total_sequences = selected_sequences['repeat'].sum()
 
         if selected_sequences.empty:
@@ -294,11 +306,9 @@ class SequencesWidget(QWidget):
 
         self.runButton.setEnabled(False)
         self.abortButton.setEnabled(True)
-        self.worker = ExperimentWorker(self.experiment_ops, selected_sequences, self.config, callbacks)
 
-        self.worker_thread = QThread()
-        self.worker.moveToThread(self.worker_thread)
-        self.worker_thread.started.connect(self.worker.run)
+        self.worker = ExperimentWorker(self.experiment_ops, selected_sequences, self.config, callbacks)
+        self.worker_thread = threading.Thread(target=self.worker.run, daemon=True)
 
         self.sequenceLabel.setText(f"0/{self.total_sequences} sequences")
         self.timer.start(1000)
@@ -337,11 +347,6 @@ class SequencesWidget(QWidget):
     def handleError(self, error_message):
         QMessageBox.critical(self, "Error", error_message)
 
-    def abortSequences(self):
-        if self.worker and self.experiment_ops:
-            self.experiment_ops.abort()
-            self.abortButton.setEnabled(False)
-
     def onWorkerFinished(self):
         self.runButton.setEnabled(True)
         self.abortButton.setEnabled(False)
@@ -349,14 +354,19 @@ class SequencesWidget(QWidget):
         self.timeLabel.setText("00:00:00 remaining")
         self.sequenceLabel.setText("0/0 sequences")
         self.timer.stop()
-        self.highlightRow(None)  # Clear highlighting
-        
+        self.highlightRow(None)
+
         if self.worker:
-            self.worker_thread.quit()
-            self.worker_thread.wait()
+            self.worker_thread.join()
             self.worker = None
-            
+
         QMessageBox.information(self, "Finished", "Sequence execution finished.")
+
+    def abortSequences(self):
+        if self.worker and self.experiment_ops:
+            self.experiment_ops.abort()
+            self.abortButton.setEnabled(False)
+
 
 class ManualControlWidget(QWidget):
     def __init__(self, config, syringe, selector_valves, disc_pump):
@@ -444,9 +454,12 @@ class ManualControlWidget(QWidget):
         self.pushButton.clicked.connect(lambda: self.operateSyringe("extract"))
         self.pullButton = QPushButton("Dispense")
         self.pullButton.clicked.connect(lambda: self.operateSyringe("dispense"))
+        self.emptyButton = QPushButton("Empty to Waste")
+        self.emptyButton.clicked.connect(lambda: self.operateSyringe("empty"))
         actionLayout.addWidget(self.pushButton)
         actionLayout.addWidget(self.pullButton)
         leftLayout.addLayout(actionLayout, 3, 0, 1, 2)
+        leftLayout.addWidget(self.emptyButton)
 
         topLayout.addWidget(leftWidget, 3)
 
@@ -502,6 +515,8 @@ class ManualControlWidget(QWidget):
                 exec_time = self.syringePump.dispense(syringe_port, volume, speed_code)
             elif action == "extract":
                 exec_time = self.syringePump.extract(syringe_port, volume, speed_code)
+            elif action == "empty":
+                exec_time = self.syringePump.dispense_to_waste()
 
             # Set up progress tracking
             self.operation_duration = exec_time
@@ -601,6 +616,7 @@ class ManualControlWidget(QWidget):
         self.position_timer.stop()
         super().closeEvent(event)
 
+
 class FluidicsControlGUI(QMainWindow):
     def __init__(self, is_simulation):
         super().__init__()
@@ -608,7 +624,7 @@ class FluidicsControlGUI(QMainWindow):
         self.simulation = is_simulation
         self.temperatureController = None
 
-        initialize_hardware(self.simulation, self.config)
+        self.initialize_hardware(self.simulation, self.config)
         self.selectorValveSystem = SelectorValveSystem(self.controller, self.config)
 
         if self.config['application'] == "Open Chamber":
@@ -635,7 +651,7 @@ class FluidicsControlGUI(QMainWindow):
 
         self.setCentralWidget(tabWidget)
 
-    def initialize_hardware(simulation, config):
+    def initialize_hardware(self, simulation, config):
         if simulation:
             self.controller = FluidControllerSimulation(config['microcontroller']['serial_number'])
             self.syringePump = SyringePumpSimulation(
@@ -652,17 +668,19 @@ class FluidicsControlGUI(QMainWindow):
                                 syringe_ul=config['syringe_pump']['volume_ul'], 
                                 speed_code_limit=config['syringe_pump']['speed_code_limit'],
                                 waste_port=3)
-            if 'temperature_controller' in config and config['use_temperature_controller']:
+            if 'temperature_controller' in config and config['temperature_controller']['use_temperature_controller']:
                 self.temperatureController = TCMController(config['temperature_controller']['serial_number'])
 
-        controller.begin()
-        controller.send_command(CMD_SET.CLEAR)
-
-        return controller, syringePump
+        self.controller.begin()
+        self.controller.send_command(CMD_SET.CLEAR)
 
     def closeEvent(self, event):
-        self.syringePump.close()
+        if self.config['application'] == "Open Chamber":
+            self.syringePump.close()
+        elif self.config['application'] == "MERFISH":
+            self.syringePump.close(True)
         super().closeEvent(event)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

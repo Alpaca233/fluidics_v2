@@ -70,7 +70,7 @@ class ExperimentWorker:
         current_sequence = 0
         try:
             for index, seq in self.sequences.iterrows():
-                for _ in range(seq['repeat']):
+                for r in range(seq['repeat']):
                     try:
                         current_sequence += 1
                         self._call_callback('update_progress', index, current_sequence, "Started")
@@ -86,7 +86,7 @@ class ExperimentWorker:
                         return
                     except Exception as e:
                         self._call_callback('on_error', 
-                            f"Error processing sequence {index} (repeat {repeat + 1}): {str(e)}")
+                            f"Error processing sequence {index} (repeat {r + 1}): {str(e)}")
                         return
 
         except Exception as e:

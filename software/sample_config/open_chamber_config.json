@@ -1,9 +1,9 @@
 {
   "microcontroller": {
-    "serial_number": "15581740"
+    "serial_number": "13995710"
   },
   "syringe_pump": {
-    "serial_number": "FTE0UGXA", 
+    "serial_number": "CRCOb13BN11", 
     "volume_ul": 2500,
     "ports_allowed": [1, 2, 3],
     "waste_port": 1,
@@ -13,6 +13,12 @@
   },
   "selector_valves": {
     "valve_ids_allowed": [0],
+    "tubing_fluid_amount_to_valve_ul": {
+      "0": 0,
+      "1": null,
+      "2": null,
+      "3": null
+    },
     "reagent_name_mapping": {
       "port_1": "reagent x",
       "port_2": "",
@@ -24,6 +30,45 @@
       "port_8": "",
       "port_9": "",
       "port_10": "",
+      "port_11": null,
+      "port_12": null,
+      "port_13": null,
+      "port_14": null,
+      "port_15": null,
+      "port_16": null,
+      "port_17": null,
+      "port_18": null,
+      "port_19": null,
+      "port_20": null,
+      "port_21": null,
+      "port_22": null,
+      "port_23": null,
+      "port_24": null,
+      "port_25": null,
+      "port_26": null,
+      "port_27": null,
+      "port_28": null,
+      "port_29": null,
+      "port_30": null,
+      "port_31": null,
+      "port_32": null,
+      "port_33": null,
+      "port_34": null,
+      "port_35": null,
+      "port_36": null,
+      "port_37": null
+    },
+    "tubing_fluid_amount_to_port_ul": {
+      "port_1": 300,
+      "port_2": 300,
+      "port_3": 300,
+      "port_4": 300,
+      "port_5": 300,
+      "port_6": 300,
+      "port_7": 300,
+      "port_8": 300,
+      "port_9": 300,
+      "port_10": 300,
       "port_11": null,
       "port_12": null,
       "port_13": null,

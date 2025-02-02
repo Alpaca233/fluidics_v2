@@ -32,7 +32,7 @@ class MERFISHOperations():
 
     def _empty_syringe_pump_on_full(self, volume):
         if self.sp.get_current_volume() + self.sp.get_chained_volume() + volume > 0.95 * self.config['syringe_pump']['volume_ul']:
-             try:
+            try:
                 self.sp.dispense_to_waste()
                 self.sp.execute()
             except Exception as e:

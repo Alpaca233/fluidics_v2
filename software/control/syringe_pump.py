@@ -15,16 +15,16 @@ class SyringePump:
             for d in list_ports.comports():
                 if d.serial_number == sn:
                     self.port = d.device
-                    self.com_link = tecancavro.TecanAPISerial(tecan_addr=0, ser_port=self.port, ser_baud=9600)
+                    self.com_link = control.tecancavro.TecanAPISerial(tecan_addr=0, ser_port=self.port, ser_baud=9600)
                     print("Syringe pump found.")
                     break
-        self.syringe = tecancavro.models.XCaliburD(com_link=self.com_link, 
+        self.syringe = control.tecancavro.models.XCaliburD(com_link=self.com_link,
                             num_ports=num_ports,
-                            syringe_ul=syringe_ul, 
-                            microstep=False, 
-                            waste_port=waste_port, 
-                            slope=slope, 
-                            debug=debug, 
+                            syringe_ul=syringe_ul,
+                            microstep=False,
+                            waste_port=waste_port,
+                            slope=slope,
+                            debug=debug,
                             debug_log_path='.')
         self.volume = syringe_ul
         self.speed_code_limit = speed_code_limit
@@ -84,8 +84,11 @@ class SyringePump:
         self.chained_volume = self.chained_volume + volume
         return self.get_time_to_finish()
 
-    def dispense_to_waste(self, speed_code=self.speed_code_limit):
-        self.set_speed(max(speed_code, self.speed_code_limit))
+    def dispense_to_waste(self, speed_code=None):
+        if speed_code is None:
+            self.set_speed(self.speed_code_limit)
+        else:
+            self.set_speed(speed_code)
         self.syringe.dispenseToWaste(retain_port=False)
         self.chained_volume = 0
         return self.get_time_to_finish()

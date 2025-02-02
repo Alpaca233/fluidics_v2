@@ -5,6 +5,8 @@ class SelectorValve():
         self.fc = fluid_controller
         self.id = valve_id
         self.position = initial_pos
+        self.config = config
+
         self.tubing_fluid_amount_ul = self.config['selector_valves']['tubing_fluid_amount_to_valve_ul'][str(valve_id)]
         self.fc.send_command(CMD_SET.INITIALIZE_ROTARY, valve_id, SelectorValveSystem.PORTS_PER_VALVE)
         self.open(self.position)
