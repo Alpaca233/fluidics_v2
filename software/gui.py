@@ -176,7 +176,6 @@ class SequencesWidget(QWidget):
         self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels(["Sequence Name", "Fluidic Port", "Flow Rate (μL/min)", 
                                               "Volume (μL)", "Incubation Time (min)", "Repeat", "Fill Tubing With", "Include"])
-        
         # Set up delegates
         spinBoxDelegate = SpinBoxDelegate(self.table)
         self.table.setItemDelegateForColumn(2, spinBoxDelegate)  # Flow Rate
@@ -190,7 +189,9 @@ class SequencesWidget(QWidget):
         self.portDelegate = PortDelegate(self.table, ports)
         self.table.setItemDelegateForColumn(1, self.portDelegate)  # Fluidic Port
 
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setStyleSheet("QHeaderView::section { padding-left: 5px; padding-right: 5px; }")
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
 
     def loadCSV(self):
         # Todo: use same load/save csv and runSelectedSequences for different applications
@@ -579,7 +580,7 @@ class ManualControlWidget(QWidget):
             QMetaObject.invokeMethod(self, "operationComplete", Qt.QueuedConnection)
 
         except TecanAPITimeout:
-            pass
+            QMetaObject.invokeMethod(self, "operationComplete", Qt.QueuedConnection)
 
         except Exception as e:
             QMetaObject.invokeMethod(self, "handleError", 
@@ -617,6 +618,7 @@ class ManualControlWidget(QWidget):
     def setControlsEnabled(self, enabled):
         self.pushButton.setEnabled(enabled)
         self.pullButton.setEnabled(enabled)
+        self.emptyButton.setEnabled(enabled)
         self.syringePortCombo.setEnabled(enabled)
         self.speedCombo.setEnabled(enabled)
         self.volumeSpinBox.setEnabled(enabled)
@@ -671,7 +673,7 @@ class FluidicsControlGUI(QMainWindow):
 
     def initUI(self):
         self.setWindowTitle("Fluidics Control System")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 950, 600)
 
         # Create tab widget
         tabWidget = QTabWidget()
