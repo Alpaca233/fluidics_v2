@@ -30,6 +30,7 @@ class SelectorValveSystem():
             self.valves[i] = SelectorValve(self.fc, self.config, i, self.PORTS_PER_VALVE)
         self.valves[sv[-1]] = SelectorValve(self.fc, self.config, sv[-1], 1)
         self.available_port_number = (self.PORTS_PER_VALVE - 1) * len(self.valves) + 1
+        self.current_port = 1
 
     def port_to_reagent(self, port_index):
         if port_index > self.available_port_number:
@@ -52,6 +53,8 @@ class SelectorValveSystem():
             self.valves[i].open(10)
             self.fc.wait_for_completion()
 
+        self.current_port = port_index
+
     def get_tubing_fluid_amount_to_valve(self, port_index):
         # Return the tubing fluid amount from selector valve to sample. Used for fill_tubing_with.
         target_valve = ((port_index - 1) // (self.PORTS_PER_VALVE - 1))
@@ -69,3 +72,6 @@ class SelectorValveSystem():
         for i in range(1, self.available_port_number + 1):
             names.append('Port ' + str(i) + ': ' + self.config['selector_valves']['reagent_name_mapping']['port_' + str(i)])
         return names
+
+    def get_current_port(self):
+        return self.current_port

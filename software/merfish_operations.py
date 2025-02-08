@@ -52,7 +52,7 @@ class MERFISHOperations():
             self.sp.execute()
             if fill_tubing_with_port:
                 self.sv.open_port(int(fill_tubing_with_port))
-                self.sp.extract(self.extract_port, self.sv.get_tubing_fluid_amount(fill_tubing_with_port), speed_code)
+                self.sp.extract(self.extract_port, self.sv.get_tubing_fluid_amount_to_valve(fill_tubing_with_port), speed_code)
                 self.sp.execute()
 
         except Exception as e:
@@ -69,7 +69,7 @@ class MERFISHOperations():
         try:
             self.sp.reset_chain()
             for i in range(1, self.sv.available_port_number + 1):
-                volume_to_port = self.config['selector_valves']['tubing_fluid_amount_to_port_ul']['port_' + str(i)]
+                volume_to_port = self.sv.get_tubing_fluid_amount_to_port(i)
                 if i != port and volume_to_port:
                     self._empty_syringe_pump_on_full(volume_to_port)
                     self.sv.open_port(i)

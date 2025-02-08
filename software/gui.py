@@ -259,7 +259,7 @@ class SequencesWidget(QWidget):
                 'fluidic_port': (self.table.cellWidget(row, 1).currentIndex() + 1),
                 'flow_rate': float(self.table.item(row, 2).text()),
                 'volume': float(self.table.item(row, 3).text()),
-                'incubation_time': float(self.table.item(row, 4).text()),
+                'incubation_time': int(self.table.item(row, 4).text()),
                 'repeat': int(self.table.item(row, 5).text()),
                 'fill_tubing_with': int(self.table.item(row, 6).text()),
                 'include': 1 if self.table.cellWidget(row, 7).isChecked() else 0
@@ -642,6 +642,7 @@ class ManualControlWidget(QWidget):
         # Start timer when widget becomes visible
         super().showEvent(event)
         self.plunger_timer.start(500)
+        self.valveCombo.setCurrentIndex(self.selectorValveSystem.get_current_port() - 1)
 
     def hideEvent(self, event):
         # Stop timer when widget becomes hidden

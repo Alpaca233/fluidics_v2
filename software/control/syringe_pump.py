@@ -65,7 +65,7 @@ class SyringePump:
             self.syringe.waitReady()
             self.is_busy = False
         else:
-            self.wait_for_stop(t)
+            self.wait_for_stop()
         self.get_plunger_position()
         self.chained_volume = 0
 
@@ -96,8 +96,7 @@ class SyringePump:
     def abort(self):
         self.syringe.terminateCmd()
 
-    def wait_for_stop(self, t=0):
-        time.sleep(t)
+    def wait_for_stop(self):
         while True:
             if self.syringe._checkReady():
                 self.is_busy = False
