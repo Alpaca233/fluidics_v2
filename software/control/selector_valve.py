@@ -27,14 +27,14 @@ class SelectorValveSystem():
         self.config = config
         self.valves = [None] * len(self.config['selector_valves']['valve_ids_allowed'])
         sv = self.config['selector_valves']['valve_ids_allowed']
-        self.number_of_ports = self.config['selector_valves']['number_of_ports']
         self.available_port_number = 0
-        for i in sv[:-1]:
-            self.valves[i] = SelectorValve(self.fc, self.config, i, self.number_of_ports[i])
-            self.available_port_number += (self.number_of_ports[i] - 1)
-        self.valves[sv[-1]] = SelectorValve(self.fc, self.config, sv[-1], 1)
+        for i, valve_id in enumerate(sv[:-1]):
+            ports = self.config['selector_valves']['number_of_ports'][str(valve_id)]
+            self.valves[i] = SelectorValve(self.fc, self.config, i, ports)
+            self.available_port_number += (ports - 1)
+        self.valves[-1] = SelectorValve(self.fc, self.config, sv[-1], 1)
         self.current_port = self.available_port_number + 1
-        self.available_port_number += self.number_of_ports[-1]
+        self.available_port_number += self.config['selector_valves']['number_of_ports'][str(sv[-1])]
 
     def port_to_reagent(self, port_index):
         if port_index > self.available_port_number:
@@ -50,7 +50,7 @@ class SelectorValveSystem():
         for valve in self.valves[:-1]:  # Process all valves except the last one
             ports_in_valve = valve.number_of_ports - 1
             if port_index > (ports_processed + ports_in_valve):
-                valve.open(ports_in_valve)  # Open the last port
+                valve.open(ports_in_valve + 1)  # Open the last port
                 self.fc.wait_for_completion()
                 ports_processed += ports_in_valve
             else:

@@ -13,7 +13,12 @@
   },
   "selector_valves": {
     "valve_ids_allowed": [0, 1, 2],
-    "number_of_ports": [10, 10, 10],
+    "number_of_ports": {
+      "0": 10,
+      "1": 10,
+      "2": 10,
+      "3": null
+    },
     "tubing_fluid_amount_to_valve_ul": {
       "0": 800,
       "1": 1000,
