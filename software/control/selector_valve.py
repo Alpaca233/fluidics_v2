@@ -8,7 +8,8 @@ class SelectorValve():
         self.config = config
 
         self.tubing_fluid_amount_ul = self.config['selector_valves']['tubing_fluid_amount_to_valve_ul'][str(valve_id)]
-        self.fc.send_command(CMD_SET.INITIALIZE_ROTARY, valve_id, SelectorValveSystem.PORTS_PER_VALVE)
+        self.number_of_ports = self.config['selector_valves']['number_of_ports'][str(valve_id)]
+        self.fc.send_command(CMD_SET.INITIALIZE_ROTARY, valve_id, self.number_of_ports)
         self.open(self.position)
         print(f"Selector valve id = {valve_id} initialized.")
 
@@ -25,12 +26,15 @@ class SelectorValveSystem():
         self.fc = fluid_controller
         self.config = config
         self.valves = [None] * len(self.config['selector_valves']['valve_ids_allowed'])
-        sv = sorted(self.config['selector_valves']['valve_ids_allowed'])
+        sv = self.config['selector_valves']['valve_ids_allowed']
+        self.number_of_ports = self.config['selector_valves']['number_of_ports']
+        self.available_port_number = 0
         for i in sv[:-1]:
-            self.valves[i] = SelectorValve(self.fc, self.config, i, self.PORTS_PER_VALVE)
+            self.valves[i] = SelectorValve(self.fc, self.config, i, self.number_of_ports[i])
+            self.available_port_number += (self.number_of_ports[i] - 1)
         self.valves[sv[-1]] = SelectorValve(self.fc, self.config, sv[-1], 1)
-        self.available_port_number = (self.PORTS_PER_VALVE - 1) * len(self.valves) + 1
-        self.current_port = 1
+        self.current_port = self.available_port_number + 1
+        self.available_port_number += self.number_of_ports[-1]
 
     def port_to_reagent(self, port_index):
         if port_index > self.available_port_number:
@@ -39,29 +43,40 @@ class SelectorValveSystem():
             return self.config['selector_valves']['reagent_name_mapping']['port_' + str(port_index)]
 
     def open_port(self, port_index):
-        target_valve = ((port_index - 1) // (self.PORTS_PER_VALVE - 1))
-        if target_valve == len(self.valves):
-            target_port = self.PORTS_PER_VALVE
-            target_valve -= 1
-        else:
-            target_port = (port_index - 1) % (self.PORTS_PER_VALVE - 1) + 1
+        if port_index > self.available_port_number:
+            return
+            
+        ports_processed = 0
+        for valve in self.valves[:-1]:  # Process all valves except the last one
+            ports_in_valve = valve.number_of_ports - 1
+            if port_index > (ports_processed + ports_in_valve):
+                valve.open(ports_in_valve)  # Open the last port
+                self.fc.wait_for_completion()
+                ports_processed += ports_in_valve
+            else:
+                valve.open(port_index - ports_processed)
+                self.fc.wait_for_completion()
+                self.current_port = port_index
+                return
 
-        self.valves[target_valve].open(target_port)
+        # If we get here, it's in the last valve
+        self.valves[-1].open(port_index - ports_processed)
         self.fc.wait_for_completion()
-
-        for i in range(target_valve):
-            self.valves[i].open(10)
-            self.fc.wait_for_completion()
-
         self.current_port = port_index
+        return
 
     def get_tubing_fluid_amount_to_valve(self, port_index):
         # Return the tubing fluid amount from selector valve to sample. Used for fill_tubing_with.
-        target_valve = ((port_index - 1) // (self.PORTS_PER_VALVE - 1))
-        if target_valve == len(self.valves):
-            target_valve -= 1
+        ports_processed = 0
+        for i, valve in enumerate(self.valves[:-1]):
+            ports_in_valve = valve.number_of_ports - 1  # Subtract 1 because last port is for passing through
+            if port_index > (ports_processed + ports_in_valve):
+                ports_processed += ports_in_valve
+            else:
+                return valve.tubing_fluid_amount_ul
 
-        return self.valves[target_valve].tubing_fluid_amount_ul
+        # If we get here, it's in the last valve
+        return self.valves[-1].tubing_fluid_amount_ul
 
     def get_tubing_fluid_amount_to_port(self, port_index):
         # Return the tubing fluid amount from reagent to selector valve port. Used for priming and cleaning up.

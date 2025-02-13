@@ -400,7 +400,7 @@ class SequencesWidget(QWidget):
 
     def abortSequences(self):
         if self.worker and self.experiment_ops:
-            self.experiment_ops.abort()
+            self.worker.abort()
             self.abortButton.setEnabled(False)
 
 
@@ -605,6 +605,7 @@ class ManualControlWidget(QWidget):
         self.setControlsEnabled(True)
         self.operation_start_time = None
         self.operation_duration = None
+        self.syringePump.is_busy = False
 
     @pyqtSlot(str)
     def handleError(self, error_message):
