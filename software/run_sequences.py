@@ -9,6 +9,7 @@ from control.controller import FluidControllerSimulation, FluidController
 from control.syringe_pump import SyringePumpSimulation, SyringePump
 from control.selector_valve import SelectorValveSystem
 from control.disc_pump import DiscPump
+from control.temperature_controller import TCMControllerSimulation, TCMController
 from merfish_operations import MERFISHOperations
 from open_chamber_operations import OpenChamberOperations
 from experiment_worker import ExperimentWorker
