@@ -1,6 +1,5 @@
 import control.tecancavro
 import time
-import threading
 from serial.tools import list_ports
 
 class SyringePump:
@@ -168,6 +167,12 @@ class SyringePumpSimulation():
 
     def get_plunger_position(self):
         return 0.5
+
+    def get_current_volume(self):
+        return self.volume * self.plunger_pos
+
+    def get_chained_volume(self):
+        return 0
 
     def set_speed(self, speed_code):
         pass
