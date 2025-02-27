@@ -21,10 +21,8 @@ class MERFISHOperations():
         except:
             raise ValueError("Invalid sequence")
 
-        if sequence_name == "Flow Reagent":
+        if sequence_name.startswith("Flow "):
             self.flow_reagent(port, flow_rate, volume, fill_tubing_with)
-        elif sequence_name == "Priming":
-            self.priming_or_clean_up(port, flow_rate, volume)
         elif sequence_name in ("Priming", "Clean Up"):
             self.priming_or_clean_up(port, flow_rate, volume)
         else:
