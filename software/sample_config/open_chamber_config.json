@@ -106,8 +106,7 @@
   },
   "temperature_controller": {
       "use_temperature_controller": false,
-      "serial_number": "FTDI9EWB",
-      "target_temperature": 50
+      "serial_number": "FTDI9EWB"
   },
   "chamber_volume_ul": 1300,
   "tubing_fluid_amount_sv_to_sp_ul": 300,

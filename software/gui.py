@@ -698,7 +698,7 @@ class FluidicsControlGUI(QMainWindow):
                                 syringe_ul=config['syringe_pump']['volume_ul'], 
                                 speed_code_limit=config['syringe_pump']['speed_code_limit'],
                                 waste_port=3)
-            if 'temperature_controller' in config and config['use_temperature_controller']:
+            if 'temperature_controller' in config and config['temperature_controller']['use_temperature_controller']:
                 self.temperatureController = TCMControllerSimulation()
         else:
             self.controller = FluidController(config['microcontroller']['serial_number'])
