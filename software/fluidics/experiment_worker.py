@@ -55,7 +55,7 @@ class ExperimentWorker:
         total_time = time_minutes * 60  # Convert minutes to seconds
         for i in range(total_time):
             time.sleep(1)
-            if i % 5 == 0:  # Check abort every 5 seconds during incubation
+            if i % 2 == 0:  # Check abort every 2 seconds during incubation
                 self._check_abort()
 
     def abort(self):
@@ -75,6 +75,7 @@ class ExperimentWorker:
                         current_sequence += 1
                         self._call_callback('update_progress', index, current_sequence, "Started")
                         self.experiment_ops.process_sequence(seq)
+                        self._check_abort()
 
                         if seq['incubation_time'] > 0:
                             self._call_callback('update_progress', index, current_sequence, "Incubating")

@@ -52,6 +52,8 @@ class MERFISHOperations():
             self.sv.open_port(port)
             self.sp.extract(self.extract_port, volume, speed_code)
             self.sp.execute()
+            if self.sp.is_aborted:
+                return
             if fill_tubing_with_port:
                 self.sv.open_port(int(fill_tubing_with_port))
                 self._empty_syringe_pump_on_full(self.sv.get_tubing_fluid_amount_to_valve(fill_tubing_with_port))
@@ -80,6 +82,8 @@ class MERFISHOperations():
                     self.sv.open_port(i)
                     self.sp.extract(self.extract_port, volume_to_port, speed_code)
                     self.sp.execute()
+                    if self.sp.is_aborted:
+                        return
 
             self.sv.open_port(port)
             self._empty_syringe_pump_on_full(volume)

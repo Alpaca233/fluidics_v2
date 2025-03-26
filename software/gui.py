@@ -378,7 +378,8 @@ class SequencesWidget(QWidget):
         if self.worker:
             self.worker_thread.join()
             self.worker = None
-            
+
+        self.syringePump.reset_abort()
         QMessageBox.information(self, "Finished", "Sequence execution finished.")
 
     def _handle_time_estimate(self, time_to_finish, n_sequences):

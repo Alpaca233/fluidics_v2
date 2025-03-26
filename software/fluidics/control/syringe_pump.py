@@ -33,6 +33,7 @@ class SyringePump:
         self.get_plunger_position()
 
         self.is_busy = False
+        self.is_aborted = False
 
         print("Syringe pump initiated.")
 
@@ -58,6 +59,8 @@ class SyringePump:
         self.chained_volume = 0
 
     def execute(self, block_pump=False):
+        if self.is_aborted:
+            return
         self.is_busy = True
         t = self.syringe.executeChain(minimal_reset=True)
         if block_pump:
@@ -72,18 +75,24 @@ class SyringePump:
         return self.syringe.exec_time
 
     def dispense(self, port, volume, speed_code):
+        if self.is_aborted:
+            return
         self.set_speed(max(speed_code, self.speed_code_limit))
         self.syringe.dispense(port, volume)
         self.chained_volume = self.chained_volume - volume
         return self.get_time_to_finish()
 
     def extract(self, port, volume, speed_code):
+        if self.is_aborted:
+            return
         self.set_speed(max(speed_code, self.speed_code_limit))
         self.syringe.extract(port, volume)
         self.chained_volume = self.chained_volume + volume
         return self.get_time_to_finish()
 
     def dispense_to_waste(self, speed_code=None):
+        if self.is_aborted:
+            return
         if speed_code is None:
             self.set_speed(self.speed_code_limit)
         else:
@@ -94,6 +103,10 @@ class SyringePump:
 
     def abort(self):
         self.syringe.terminateCmd()
+        self.is_aborted = True
+
+    def reset_abort(self):
+        self.is_aborted = False
 
     def wait_for_stop(self, t=0):
         time.sleep(t)
@@ -101,7 +114,7 @@ class SyringePump:
             if self.syringe._checkReady():
                 self.is_busy = False
                 break
-            time.sleep(0.1)
+            time.sleep(0.5)
 
     def get_flow_rate(self, speed_code):
         return round(self.volume * 60 / (self.SPEED_SEC_MAPPING[speed_code] * 1000), 2)

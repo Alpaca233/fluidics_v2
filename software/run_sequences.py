@@ -118,6 +118,7 @@ def main():
             thread.join()
         sys.exit(1)
     finally:
+        syringePump.reset_abort()
         syringePump.close()
 
 if __name__ == '__main__':
