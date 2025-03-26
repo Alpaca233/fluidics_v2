@@ -1,5 +1,5 @@
 from time import sleep, time
-from experiment_worker import AbortRequested, OperationError
+from .experiment_worker import AbortRequested, OperationError
 
 class OpenChamberOperations():
     def __init__(self, config, syringe_pump, selector_valves, disc_pump, temperature_controller=None):

@@ -1,4 +1,4 @@
-from control._def import CMD_SET, MCU_CONSTANTS
+from ._def import CMD_SET, MCU_CONSTANTS
 import time
 
 class DiscPump():

@@ -1,5 +1,5 @@
 from time import sleep
-from experiment_worker import AbortRequested, OperationError
+from .experiment_worker import AbortRequested, OperationError
 
 class MERFISHOperations():
     def __init__(self, config, syringe_pump, selector_valves):

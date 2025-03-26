@@ -1,4 +1,4 @@
-import control.tecancavro
+import fluidics.control.tecancavro as tecancavro
 import time
 from serial.tools import list_ports
 
@@ -14,10 +14,10 @@ class SyringePump:
             for d in list_ports.comports():
                 if d.serial_number == sn:
                     self.port = d.device
-                    self.com_link = control.tecancavro.TecanAPISerial(tecan_addr=0, ser_port=self.port, ser_baud=9600)
+                    self.com_link = tecancavro.TecanAPISerial(tecan_addr=0, ser_port=self.port, ser_baud=9600)
                     print("Syringe pump found.")
                     break
-        self.syringe = control.tecancavro.models.XCaliburD(com_link=self.com_link,
+        self.syringe = tecancavro.models.XCaliburD(com_link=self.com_link,
                             num_ports=num_ports,
                             syringe_ul=syringe_ul,
                             microstep=False,
@@ -213,5 +213,5 @@ class SyringePumpSimulation():
     def flow_rate_to_speed_code(self, target_flow_rate):
         return 20
 
-    def close(self):
+    def close(self, to_waste=False):
         pass

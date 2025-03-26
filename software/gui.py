@@ -20,9 +20,9 @@ from fluidics.control.temperature_controller import TCMController, TCMController
 
 from fluidics.control._def import CMD_SET
 from fluidics.control.tecancavro.tecanapi import TecanAPITimeout
-from merfish_operations import MERFISHOperations
-from open_chamber_operations import OpenChamberOperations
-from experiment_worker import ExperimentWorker
+from fluidics.merfish_operations import MERFISHOperations
+from fluidics.open_chamber_operations import OpenChamberOperations
+from fluidics.experiment_worker import ExperimentWorker
 
 import pandas as pd
 
