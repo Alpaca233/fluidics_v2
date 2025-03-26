@@ -12,14 +12,14 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVB
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, Q_ARG, QMetaObject, QEvent, QCoreApplication
 from PyQt5.QtGui import QColor
 
-from control.controller import FluidController, FluidControllerSimulation
-from control.syringe_pump import SyringePump, SyringePumpSimulation
-from control.selector_valve import SelectorValveSystem
-from control.disc_pump import DiscPump
-from control.temperature_controller import TCMController, TCMControllerSimulation
+from fluidics.control.controller import FluidController, FluidControllerSimulation
+from fluidics.control.syringe_pump import SyringePump, SyringePumpSimulation
+from fluidics.control.selector_valve import SelectorValveSystem
+from fluidics.control.disc_pump import DiscPump
+from fluidics.control.temperature_controller import TCMController, TCMControllerSimulation
 
-from control._def import CMD_SET
-from control.tecancavro.tecanapi import TecanAPITimeout
+from fluidics.control._def import CMD_SET
+from fluidics.control.tecancavro.tecanapi import TecanAPITimeout
 from merfish_operations import MERFISHOperations
 from open_chamber_operations import OpenChamberOperations
 from experiment_worker import ExperimentWorker
