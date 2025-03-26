@@ -18,13 +18,17 @@ class MERFISHOperations():
             volume = int(sequence['volume'])
             incubation_time = int(sequence['incubation_time'])
             fill_tubing_with = sequence['fill_tubing_with']
+            try:
+                use_ports = sequence['use_ports']  # for use from Squid software widget
+            except:
+                use_ports = None
         except:
             raise ValueError("Invalid sequence")
 
         if sequence_name.startswith("Flow "):
             self.flow_reagent(port, flow_rate, volume, fill_tubing_with)
         elif sequence_name in ("Priming", "Clean Up"):
-            self.priming_or_clean_up(port, flow_rate, volume)
+            self.priming_or_clean_up(port, flow_rate, volume, use_ports)
         else:
             raise ValueError(f"Unknown sequence name: {sequence_name}")
 
@@ -57,7 +61,7 @@ class MERFISHOperations():
         except Exception as e:
             raise OperationError(f"Error in flow_reagent from port: {port}: {str(e)}")
 
-    def priming_or_clean_up(self, port, flow_rate, volume):
+    def priming_or_clean_up(self, port, flow_rate, volume, use_ports=None):
         """
         Fill the tubings from reagents to selector valves with the corresponding reagents. Finally, fill the tubings before 
         syringe pump with {volume} of the reagent from {port}.
@@ -68,6 +72,8 @@ class MERFISHOperations():
         try:
             self.sp.reset_chain()
             for i in range(1, self.sv.available_port_number + 1):
+                if use_ports is not None and i not in use_ports:
+                    continue
                 volume_to_port = self.sv.get_tubing_fluid_amount_to_port(i)
                 if i != port and volume_to_port:
                     self._empty_syringe_pump_on_full(volume_to_port)
