@@ -176,6 +176,7 @@ class SyringePumpSimulation():
         self.range = 3000
         self.is_busy = False
         self.is_aborted = False
+        self.get_plunger_position()
         print("Simulated syringe pump.")
 
     def get_plunger_position(self):
