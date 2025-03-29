@@ -175,11 +175,12 @@ class SyringePumpSimulation():
         self.volume = syringe_ul
         self.range = 3000
         self.is_busy = False
-
+        self.is_aborted = False
         print("Simulated syringe pump.")
 
     def get_plunger_position(self):
-        return 0.5
+        self.plunger_pos = 0.5
+        return self.plunger_pos
 
     def get_current_volume(self):
         return self.volume * self.plunger_pos
@@ -213,7 +214,10 @@ class SyringePumpSimulation():
         return 5
 
     def abort(self):
-        pass
+        self.is_aborted = True
+
+    def reset_abort(self):
+        self.is_aborted = False
 
     def wait_for_stop(self, t=0):
         time.sleep(t)
