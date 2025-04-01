@@ -51,6 +51,8 @@ class MERFISHOperations():
             self._empty_syringe_pump_on_full(volume)
             self.sv.open_port(port)
             self.sp.extract(self.extract_port, volume, speed_code)
+            if self.sp.is_aborted:
+                return
             self.sp.execute()
             if self.sp.is_aborted:
                 return
@@ -58,6 +60,8 @@ class MERFISHOperations():
                 self.sv.open_port(int(fill_tubing_with_port))
                 self._empty_syringe_pump_on_full(self.sv.get_tubing_fluid_amount_to_valve(fill_tubing_with_port))
                 self.sp.extract(self.extract_port, self.sv.get_tubing_fluid_amount_to_valve(fill_tubing_with_port), speed_code)
+                if self.sp.is_aborted:
+                    return
                 self.sp.execute()
 
         except Exception as e:
@@ -81,6 +85,8 @@ class MERFISHOperations():
                     self._empty_syringe_pump_on_full(volume_to_port)
                     self.sv.open_port(i)
                     self.sp.extract(self.extract_port, volume_to_port, speed_code)
+                    if self.sp.is_aborted:
+                        return
                     self.sp.execute()
                     if self.sp.is_aborted:
                         return
@@ -88,6 +94,8 @@ class MERFISHOperations():
             self.sv.open_port(port)
             self._empty_syringe_pump_on_full(volume)
             self.sp.extract(self.extract_port, volume, speed_code)
+            if self.sp.is_aborted:
+                return
             self.sp.execute()
         except Exception as e:
             raise OperationError(f"Error in priming_or_clean_up: {str(e)}")
