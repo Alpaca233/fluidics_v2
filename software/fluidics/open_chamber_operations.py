@@ -223,7 +223,7 @@ class OpenChamberOperations():
                 if i != port and volume_to_port:
                     self._empty_syringe_pump_on_full(volume_to_port)
                     self.sv.open_port(i)
-                    self.sp.extract(self.extract_port, volume_to_port, self.config['syringe_pump']['speed_code_limit'])
+                    self.sp.extract(self.config['syringe_pump']['extract_port'], volume_to_port, self.config['syringe_pump']['speed_code_limit'])
                     if self.sp.is_aborted:
                         return
                     self.sp.execute()
@@ -232,7 +232,7 @@ class OpenChamberOperations():
 
             self.sv.open_port(port)
             self.sp.dispense_to_waste(self.config['syringe_pump']['speed_code_limit'])
-            self.sp.extract(self.extract_port, volume, self.config['syringe_pump']['speed_code_limit'])
+            self.sp.extract(self.config['syringe_pump']['extract_port'], volume, self.config['syringe_pump']['speed_code_limit'])
             self.sp.dispense(self.config['syringe_pump']['dispense_port'], volume, speed_code)
             if self.sp.is_aborted:
                 return
