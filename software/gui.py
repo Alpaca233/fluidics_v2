@@ -384,6 +384,8 @@ class SequencesWidget(QWidget):
             self.worker = None
 
         self.syringePump.reset_abort()
+        if self.temperatureController is not None:
+            self.temperatureController.reset_abort()
         QMessageBox.information(self, "Finished", "Sequence execution finished.")
 
     def _handle_time_estimate(self, time_to_finish, n_sequences):
@@ -405,6 +407,9 @@ class SequencesWidget(QWidget):
 
     def abortSequences(self):
         if self.worker and self.experiment_ops:
+            self.syringePump.abort()
+            if self.temperatureController is not None:
+                self.temperatureController.abort()
             self.worker.abort()
             self.abortButton.setEnabled(False)
 

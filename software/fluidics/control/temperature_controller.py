@@ -26,6 +26,8 @@ class TCMController():
         self.actual_temp_updating_thread = threading.Thread(target=self.update_temperature, daemon=True)
         self.terminate_temperature_updating_thread = False
 
+        self.is_aborted = False
+
     def send_command(self, command, module):
         with self.serial_lock:
             self.serial.write(f"{module}:{command}\r".encode())
@@ -79,6 +81,13 @@ class TCMController():
                 except TypeError as ex:
                     print("Temperature read callback failed")
 
+    def abort(self):
+        self.is_aborted = True
+
+    def reset_abort(self):
+        self.is_aborted = False
+
+
 class TCMControllerSimulation():
     def __init__(self, sn=None, baud_rate=57600, timeout=0.5):
         self.target_temperature_ch1 = self.get_target_temperature('TC1')
@@ -90,6 +99,8 @@ class TCMControllerSimulation():
         self.temperature_updating_callback = None
         self.actual_temp_updating_thread = threading.Thread(target=self.update_temperature, daemon=True)
         self.terminate_temperature_updating_thread = False
+
+        self.is_aborted = False
 
     def send_command(self, command, module, type):
         pass
@@ -116,3 +127,9 @@ class TCMControllerSimulation():
                     self.temperature_updating_callback(self.t1, self.t2)
                 except TypeError as ex:
                     print("Temperature read callback failed")
+
+    def abort(self):
+        self.is_aborted = True
+
+    def reset_abort(self):
+        self.is_aborted = False
