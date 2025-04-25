@@ -5,7 +5,7 @@ class DiscPump():
     def __init__(self, fluid_controller):
         self.fc = fluid_controller
         self.fc.send_command(CMD_SET.INITIALIZE_DISC_PUMP, MCU_CONSTANTS.TTP_MAX_PW)
-        print('Disc pump initiated.')
+        print('Disc pump initialized.')
 
     def aspirate(self, time_s):
         self.fc.send_command(CMD_SET.SET_PUMP_PWR_OPEN_LOOP, MCU_CONSTANTS.TTP_MAX_PW)

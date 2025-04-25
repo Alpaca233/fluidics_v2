@@ -247,9 +247,8 @@ class OpenChamberOperations():
             self.tc.set_target_temperature('TC2', target)
             start_time = time()
             while True:
-                if abs(self.tc.t1 - target) <= 1 and abs(self.tc.t1 - target):
+                sleep(2)
+                if abs(self.tc.t1 - target) <= 1 and abs(self.tc.t2 - target) <= 1:
                     break
                 if time() - start_time > timeout:
                     raise TimeoutError(f"Temperature failed to stabilize within {timeout} seconds")
-
-            sleep(2)

@@ -35,7 +35,7 @@ class SyringePump:
         self.is_busy = False
         self.is_aborted = False
 
-        print("Syringe pump initiated.")
+        print("Syringe pump initialized.")
 
     def get_plunger_position(self):
         position = self.syringe.getPlungerPos()

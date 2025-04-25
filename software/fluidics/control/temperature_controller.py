@@ -84,6 +84,9 @@ class TCMControllerSimulation():
         self.target_temperature_ch1 = self.get_target_temperature('TC1')
         self.target_temperature_ch2 = self.get_target_temperature('TC2')
 
+        self.t1 = 0
+        self.t2 = 0
+
         self.temperature_updating_callback = None
         self.actual_temp_updating_thread = threading.Thread(target=self.update_temperature, daemon=True)
         self.terminate_temperature_updating_thread = False
@@ -106,10 +109,10 @@ class TCMControllerSimulation():
     def update_temperature(self):
         while self.terminate_temperature_updating_thread == False:
             time.sleep(1)
-            t1 = self.get_actual_temperature('TC1')
-            t2 = self.get_actual_temperature('TC2')
+            self.t1 = self.get_actual_temperature('TC1')
+            self.t2 = self.get_actual_temperature('TC2')
             if self.temperature_updating_callback is not None:
                 try:
-                    self.temperature_updating_callback(t1, t2)
+                    self.temperature_updating_callback(self.t1, self.t2)
                 except TypeError as ex:
                     print("Temperature read callback failed")
