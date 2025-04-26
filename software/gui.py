@@ -29,7 +29,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-
+import warnings
+warnings.filterwarnings('ignore')
 
 def load_config(config_path='./config.json'):
     with open(config_path, 'r') as f:
@@ -304,6 +305,8 @@ class SequencesWidget(QWidget):
 
     def runSelectedSequences(self):
         # TODO: map speed codes
+        if self.table.rowCount() == 0:
+            return
         selected_sequences = self.getSequencesDF(True)
         self.total_sequences = selected_sequences['repeat'].sum()
 
@@ -1044,6 +1047,7 @@ class FluidicsControlGUI(QMainWindow):
         if self.temperatureController is not None:
             self.temperatureController.terminate_temperature_updating_thread = True
             self.temperatureController.actual_temp_updating_thread.join()
+            self.temperatureController.serial.close()
 
         if self.config['application'] == "Open Chamber":
             self.syringePump.close()
