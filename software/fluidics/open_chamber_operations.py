@@ -253,4 +253,5 @@ class OpenChamberOperations():
                 if self.tc.is_aborted:
                     break
                 if time() - start_time > timeout:
-                    raise TimeoutError(f"Temperature failed to stabilize within {timeout} seconds")
+                    print(f"Temperature failed to stabilize within {timeout} seconds, t1={self.tc.t1}, t2={self.tc.t2}")
+                    break
