@@ -40,7 +40,8 @@ class ExperimentWorker:
                 t = seq['volume'] / seq['flow_rate'] * 60
                 if seq['fill_tubing_with']:
                     t += self.config['selector_valves']['tubing_fluid_amount_ul'] / seq['flow_rate'] * 60 + 1
-                t += seq['incubation_time'] * 60
+                if 'incubation_time' in seq and seq['incubation_time'] > 0:
+                    t += seq['incubation_time'] * 60
                 t += 2      # Time for opening selector valve port
                 t = t * seq['repeat']
             else:
@@ -77,7 +78,7 @@ class ExperimentWorker:
                         self.experiment_ops.process_sequence(seq)
                         self._check_abort()
 
-                        if seq['incubation_time'] > 0:
+                        if 'incubation_time' in seq and seq['incubation_time'] > 0:
                             self._call_callback('update_progress', index, current_sequence, "Incubating")
                             self.wait_for_incubation(seq['incubation_time'])
                         self._call_callback('update_progress', index, current_sequence, "Completed")
