@@ -259,9 +259,12 @@ class SequencesWidget(QWidget):
         # Create DataFrame from current table state
         data = []
         for row in range(self.table.rowCount()):
+            port_item = self.table.item(row, 1)
+            port = int(port_item.text().split(' ')[1][:-1])
+
             row_data = {
                 'sequence_name': self.table.item(row, 0).text(),
-                'fluidic_port': (self.table.cellWidget(row, 1).currentIndex() + 1),
+                'fluidic_port': port,
                 'flow_rate': float(self.table.item(row, 2).text()),
                 'volume': float(self.table.item(row, 3).text()),
                 'incubation_time': int(self.table.item(row, 4).text()),
