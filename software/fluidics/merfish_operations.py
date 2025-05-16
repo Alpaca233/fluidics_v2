@@ -77,14 +77,20 @@ class MERFISHOperations():
         speed_code = self.sp.flow_rate_to_speed_code(flow_rate)
         try:
             self.sp.reset_chain()
+            self.sp.dispense_to_waste()
+            if self.sp.is_aborted:
+                return
+            self.sp.execute()
+            if self.sp.is_aborted:
+                return
             for i in range(1, self.sv.available_port_number + 1):
                 if use_ports is not None and i not in use_ports:
                     continue
                 volume_to_port = self.sv.get_tubing_fluid_amount_to_port(i)
                 if i != port and volume_to_port:
-                    self._empty_syringe_pump_on_full(volume_to_port)
                     self.sv.open_port(i)
                     self.sp.extract(self.extract_port, volume_to_port, speed_code)
+                    self.sp.dispense_to_waste()
                     if self.sp.is_aborted:
                         return
                     self.sp.execute()
@@ -92,7 +98,6 @@ class MERFISHOperations():
                         return
 
             self.sv.open_port(port)
-            self._empty_syringe_pump_on_full(volume)
             self.sp.extract(self.extract_port, volume, speed_code)
             if self.sp.is_aborted:
                 return
