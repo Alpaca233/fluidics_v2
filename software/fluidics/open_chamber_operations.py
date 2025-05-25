@@ -214,6 +214,8 @@ class OpenChamberOperations():
         for all ports.
         """
         speed_code = self.sp.flow_rate_to_speed_code(flow_rate)
+        # We need to limit the flow rate for priming, because it takes time for flow to stabilize when there's air in the tubings.
+        priming_speed_code_limit = self.sp.flow_rate_to_speed_code(8000)
         try:
             self.sp.reset_chain()
             self.sp.dispense_to_waste()
@@ -228,7 +230,7 @@ class OpenChamberOperations():
                 volume_to_port = self.sv.get_tubing_fluid_amount_to_port(i)
                 if i != port and volume_to_port:
                     self.sv.open_port(i)
-                    self.sp.extract(self.config['syringe_pump']['extract_port'], volume_to_port, self.config['syringe_pump']['speed_code_limit'])
+                    self.sp.extract(self.config['syringe_pump']['extract_port'], volume_to_port, priming_speed_code_limit)
                     self.sp.dispense_to_waste()
                     if self.sp.is_aborted:
                         return
@@ -237,7 +239,7 @@ class OpenChamberOperations():
                         return
 
             self.sv.open_port(port)
-            self.sp.extract(self.config['syringe_pump']['extract_port'], volume, self.config['syringe_pump']['speed_code_limit'])
+            self.sp.extract(self.config['syringe_pump']['extract_port'], volume, priming_speed_code_limit)
             self.sp.dispense(self.config['syringe_pump']['dispense_port'], volume, speed_code)
             if self.sp.is_aborted:
                 return
