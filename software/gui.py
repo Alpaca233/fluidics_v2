@@ -101,6 +101,9 @@ class WorkerEvent(QEvent):
 
 
 class SequencesWidget(QWidget):
+
+    sequence_running = pyqtSignal(bool)
+
     def __init__(self, config, syringe, selector_valves, disc_pump, temperature_controller):
         super().__init__()
         self.config = config
@@ -326,6 +329,7 @@ class SequencesWidget(QWidget):
 
         self.runButton.setEnabled(False)
         self.abortButton.setEnabled(True)
+        self.sequence_running.emit(True)
 
         self.worker = ExperimentWorker(self.experiment_ops, selected_sequences, self.config, callbacks)
         self.worker_thread = threading.Thread(target=self.worker.run, daemon=True)
@@ -384,6 +388,7 @@ class SequencesWidget(QWidget):
         self.sequenceLabel.setText("0/0 sequences")
         self.timer.stop()
         self.highlightRow(None)
+        self.sequence_running.emit(False)
         
         if self.worker:
             self.worker_thread.join()
@@ -1004,20 +1009,21 @@ class FluidicsControlGUI(QMainWindow):
         self.setGeometry(100, 100, 950, 600)
 
         # Create tab widget
-        tabWidget = QTabWidget()
+        self.tabWidget = QTabWidget()
 
         # "Settings and Manual Control" tab
         runExperimentsTab = SequencesWidget(self.config, self.syringePump, self.selectorValveSystem, self.discPump, self.temperatureController)
         manualControlTab = ManualControlWidget(self.config, self.syringePump, self.selectorValveSystem, self.discPump)
         # TODO: integrate temperature controller ui
 
-        tabWidget.addTab(runExperimentsTab, "Run Experiments")
-        tabWidget.addTab(manualControlTab, "Settings and Manual Control")
+        self.tabWidget.addTab(runExperimentsTab, "Run Experiments")
+        self.tabWidget.addTab(manualControlTab, "Settings and Manual Control")
         if self.temperatureController is not None:
             temperatureControlTab = TemperatureControlWidget(self.temperatureController)
-            tabWidget.addTab(temperatureControlTab, "Temperature Control")
+            self.tabWidget.addTab(temperatureControlTab, "Temperature Control")
 
-        self.setCentralWidget(tabWidget)
+        self.setCentralWidget(self.tabWidget)
+        runExperimentsTab.sequence_running.connect(self.set_manual_control_tab_state)
 
     def initialize_hardware(self, simulation, config):
         if simulation:
@@ -1045,6 +1051,10 @@ class FluidicsControlGUI(QMainWindow):
 
         self.controller.begin()
         self.controller.send_command(CMD_SET.CLEAR)
+
+    def set_manual_control_tab_state(self, is_running):
+        manual_control_tab_index = 1
+        self.tabWidget.setTabEnabled(manual_control_tab_index, not is_running)
 
     def closeEvent(self, event):
         if self.temperatureController is not None:
