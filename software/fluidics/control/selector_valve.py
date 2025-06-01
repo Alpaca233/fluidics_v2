@@ -28,13 +28,12 @@ class SelectorValveSystem():
         self.valves = [None] * len(self.config['selector_valves']['valve_ids_allowed'])
         sv = self.config['selector_valves']['valve_ids_allowed']
         self.available_port_number = 0
-        for i, valve_id in enumerate(sv[:-1]):
+        for i, valve_id in enumerate(sv):
             ports = self.config['selector_valves']['number_of_ports'][str(valve_id)]
-            self.valves[i] = SelectorValve(self.fc, self.config, i, ports)
+            self.valves[i] = SelectorValve(self.fc, self.config, i, 1)
             self.available_port_number += (ports - 1)
-        self.valves[-1] = SelectorValve(self.fc, self.config, sv[-1], 1)
-        self.current_port = self.available_port_number + 1
-        self.available_port_number += self.config['selector_valves']['number_of_ports'][str(sv[-1])]
+        self.available_port_number += 1
+        self.current_port = 1
 
     def port_to_reagent(self, port_index):
         if port_index > self.available_port_number:
