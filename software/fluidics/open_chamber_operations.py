@@ -228,7 +228,7 @@ class OpenChamberOperations():
                 if use_ports is not None and i not in use_ports:
                     continue
                 volume_to_port = self.sv.get_tubing_fluid_amount_to_port(i)
-                if i != port and volume_to_port:
+                if volume_to_port:
                     self.sv.open_port(i)
                     self.sp.extract(self.config['syringe_pump']['extract_port'], volume_to_port, priming_speed_code_limit)
                     self.sp.dispense_to_waste()
