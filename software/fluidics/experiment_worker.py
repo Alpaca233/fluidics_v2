@@ -1,5 +1,5 @@
 import time
-import pandas as pd
+import threading
 
 class ExperimentWorker:
     def __init__(self, experiment_ops, df, config, callbacks=None):
@@ -21,7 +21,8 @@ class ExperimentWorker:
         self.sequences = df
         self.config = config
         self.callbacks = callbacks or {}
-        self.abort_requested = False
+        self._abort_event = threading.Event()
+        self._abort_event.clear()
 
         self.time_to_finish, self.n_sequences = self.get_time_to_finish()
         self._call_callback('on_estimate', self.time_to_finish, self.n_sequences)
@@ -53,19 +54,12 @@ class ExperimentWorker:
         return total_time, total_sequences
 
     def wait_for_incubation(self, time_minutes):
-        total_time = time_minutes * 60  # Convert minutes to seconds
-        for i in range(total_time):
-            time.sleep(1)
-            if i % 2 == 0:  # Check abort every 2 seconds during incubation
-                self._check_abort()
+        total_seconds = time_minutes * 60  # Convert minutes to seconds
+        if self._abort_event.wait(total_seconds):
+            raise AbortRequested()
 
     def abort(self):
-        self.abort_requested = True
-
-    def _check_abort(self):
-        if self.abort_requested:
-            self.abort_requested = False
-            raise AbortRequested()
+        self._abort_event.set()
 
     def run(self):
         current_sequence = 0
@@ -76,7 +70,8 @@ class ExperimentWorker:
                         current_sequence += 1
                         self._call_callback('update_progress', index, current_sequence, "Started")
                         self.experiment_ops.process_sequence(seq)
-                        self._check_abort()
+                        if self._abort_event.is_set():
+                            raise AbortRequested()
 
                         if 'incubation_time' in seq and seq['incubation_time'] > 0:
                             self._call_callback('update_progress', index, current_sequence, "Incubating")

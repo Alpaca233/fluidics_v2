@@ -111,6 +111,9 @@ class SyringePump:
     def wait_for_stop(self, t=0):
         time.sleep(t)
         while True:
+            if self.is_aborted:
+                self.is_busy = False
+                return
             if self.syringe._checkReady():
                 self.is_busy = False
                 break

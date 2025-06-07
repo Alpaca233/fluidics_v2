@@ -262,3 +262,5 @@ class OpenChamberOperations():
                 if time() - start_time > timeout:
                     print(f"Temperature failed to stabilize within {timeout} seconds, t1={self.tc.t1}, t2={self.tc.t2}")
                     break
+        else:
+            print("No temperature controller found. Skipping temperature control sequence.")
