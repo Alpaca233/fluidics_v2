@@ -94,6 +94,9 @@ class MERFISHOperations():
                     if self.sp.is_aborted:
                         return
                     self.sp.execute()
+                    # There could be a lot of air in a flow cell system, which may delay the stabilization of the liquid flow.
+                    # So we sleep for 1 second here to wait for the flow to stabilize.
+                    sleep(1)
                     if self.sp.is_aborted:
                         return
 
