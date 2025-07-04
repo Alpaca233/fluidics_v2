@@ -28,8 +28,10 @@ class OpenChamberOperations():
             self.clear_and_add_reagent(port, flow_rate, volume, fill_tubing_with)
         elif sequence_name == "Wash with Constant Flow":
             self.wash_with_constant_flow(port, flow_rate, volume, fill_tubing_with)
-        elif sequence_name in ("Priming", "Clean Up"):
+        elif sequence_name == "Priming":
             self.priming_or_clean_up(port, flow_rate, volume)
+        elif sequence_name == "Clean Up":
+            self.priming_or_clean_up(port, flow_rate, volume, clean_up=True)
         elif sequence_name.startswith("Set Temperature"):
             self.set_temperature(float(sequence_name.split()[-1]))
         else:
@@ -206,7 +208,7 @@ class OpenChamberOperations():
         except Exception as e:
             raise OperationError(f"Error in wash_with_constant_flow from port: {port}: {str(e)}")
 
-    def priming_or_clean_up(self, port, flow_rate, volume, use_ports=None):
+    def priming_or_clean_up(self, port, flow_rate, volume, use_ports=None, clean_up=False):
         """
         Fill the tubings from reagents to selector valves with the corresponding reagents. Finally, fill the tubings before 
         syringe pump with {volume} of the reagent from {port}.
@@ -244,6 +246,8 @@ class OpenChamberOperations():
             if self.sp.is_aborted:
                 return
             self.sp.execute()
+            if clean_up:
+                self.dp.aspirate(20)
         except Exception as e:
             raise OperationError(f"Error in priming_or_clean_up: {str(e)}")
 
