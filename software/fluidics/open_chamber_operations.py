@@ -22,9 +22,9 @@ class OpenChamberOperations():
         except:
             raise ValueError("Invalid sequence")
 
-        if sequence_name == "Add Reagent":
+        if sequence_name.startswith("Add Reagent"):
             self.add_reagent(port, flow_rate, volume, fill_tubing_with)
-        elif sequence_name == "Clear Tubings and Add Reagent":
+        elif sequence_name.startswith("Clear Tubings and Add Reagent"):
             self.clear_and_add_reagent(port, flow_rate, volume, fill_tubing_with)
         elif sequence_name == "Wash with Constant Flow":
             self.wash_with_constant_flow(port, flow_rate, volume, fill_tubing_with)
