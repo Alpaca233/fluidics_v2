@@ -16,7 +16,15 @@ class SelectorValve():
     def open(self, port):
         print("open", self.id, port)
         self.fc.send_command(CMD_SET.SET_ROTARY_VALVE, self.id, port)
+        self.fc.wait_for_completion()
+        current_position = self.get_current_position()
+        if current_position != port:
+            raise RuntimeError(f"current position is {current_position}; expected {port}")
         self.position = port
+
+    def get_current_position(self):
+        data = self.fc.get_mcu_status()
+        return data['selector_valves_pos'][self.id]
 
 
 class SelectorValveSystem():
@@ -50,11 +58,9 @@ class SelectorValveSystem():
             ports_in_valve = valve.number_of_ports - 1
             if port_index > (ports_processed + ports_in_valve):
                 valve.open(ports_in_valve + 1)  # Open the last port
-                self.fc.wait_for_completion()
                 ports_processed += ports_in_valve
             else:
                 valve.open(port_index - ports_processed)
-                self.fc.wait_for_completion()
                 self.current_port = port_index
                 return
 

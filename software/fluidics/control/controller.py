@@ -191,9 +191,11 @@ class FluidController(Microcontroller):
     
     def wait_for_completion(self):
         '''Keep polling for status until it is no longer IN_PROGRESS, return the status'''
-        status = self.get_mcu_status()
-        while (status == COMMAND_STATUS.IN_PROGRESS) or (status is None):
-            status = self.get_mcu_status()
+        mcu_data = self.get_mcu_status()
+        status = mcu_data['MCU_command_execution_status']
+        while status == COMMAND_STATUS.IN_PROGRESS:
+            mcu_data = self.get_mcu_status()
+            status = mcu_data['MCU_command_execution_status']
         
         return status
     
@@ -207,9 +209,9 @@ class FluidController(Microcontroller):
         '''
         Read a fixed-length packet from the microcontroller. If there is data available, unpack it. If in debug mode, print out the data. If we are aving logs, write to disc
         '''
-        msg = self.read_received_packet_nowait(discard_buffer=True)
-        if msg is None:
-            return None
+        msg = None
+        while msg is None:
+            msg = self.read_received_packet_nowait(discard_buffer=True)
         assert (len(msg) == MCU_MSG_LENGTH), f"Expected message of len {MCU_CMD_LENGTH}, got len {len(msg)}"
 
         '''
@@ -305,7 +307,6 @@ class FluidController(Microcontroller):
                     self.measurement_file.flush()
             if self.debug:
                 print(line)
-                pass
 
         # this block of code should only be used when get_mcu_status is executed at fixed interval (< 1s)
         '''
@@ -338,8 +339,8 @@ class FluidController(Microcontroller):
             "vol_ul": vol_ul
         }
 
-        return MCU_command_execution_status
-    
+        return self.recorded_data
+
     def send_command(self, command, *args):
         '''
         Commands are formatted as UID, command, parameters (arb. length)
