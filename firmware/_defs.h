@@ -29,7 +29,7 @@
 #define SELECTORVALVE_WIRE Wire
 #define SELECTORVALVE_QTY  2     // Only 2 are actually installed here
 #define SELECTORVALVE_MAX  5     // Support up to 5 valves  
-const uint8_t SELECTORVALVE_ADDRS[] = {0x0E, 0x1E, 0x00, 0x00, 0x00}; // 0x00 is dummy address
+const uint8_t SELECTORVALVE_ADDRS[] = {0x0E, 0x10, 0x12, 0x00, 0x00}; // 0x00 is dummy address
 
 #define SLF3X_WIRE0   Wire
 #define SLF3X_WIRE1   Wire1

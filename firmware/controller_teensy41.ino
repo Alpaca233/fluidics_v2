@@ -532,6 +532,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         // Stop all operations
         disableControlLoops();
         valves.clear_all();
+        uint8_t err;
         for (uint8_t i = 0; i < SELECTORVALVE_QTY; i++) {
           err = selectorvalves[i].set_position(1, true, RheoLink_TIMEOUT);
         }
