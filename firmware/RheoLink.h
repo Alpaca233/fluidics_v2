@@ -44,6 +44,7 @@
                   35 – timeout
                   36 – other other error
               22 – Not initialized
+              11 – Position out of range
               current valve position (1 to N) otherwise
 */
 
@@ -58,6 +59,8 @@ enum RheoLinkCommand_t {
 // Definitions for this file only
 #define RheoLink_DUMMY_DATA 'x'
 #define RheoLink_TIMEOUT 2000
+#define RheoLink_MAX_RETRIES 5
+#define RheoLink_RETRY_DELAY 10
 
 class RheoLink {
   public:
@@ -66,6 +69,8 @@ class RheoLink {
     uint8_t send_command(RheoLinkCommand_t cmd, uint8_t data = RheoLink_DUMMY_DATA);
     uint8_t read_register(RheoLinkCommand_t target);
     uint8_t block_until_done(uint32_t timeout = RheoLink_TIMEOUT);
+    uint8_t block_until_position_reached(uint8_t pos, uint32_t timeout = RheoLink_TIMEOUT);
+    uint8_t set_position(uint8_t pos, bool wait_for_completion = true, bool wait_for_position = false, uint32_t timeout = RheoLink_TIMEOUT);
     uint8_t pos_min;
     uint8_t pos_max;
   private:
