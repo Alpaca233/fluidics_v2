@@ -70,7 +70,7 @@ class RheoLink {
     uint8_t read_register(RheoLinkCommand_t target);
     uint8_t block_until_done(uint32_t timeout = RheoLink_TIMEOUT);
     uint8_t block_until_position_reached(uint8_t pos, uint32_t timeout = RheoLink_TIMEOUT);
-    uint8_t set_position(uint8_t pos, bool wait_for_completion = true, bool wait_for_position = false, uint32_t timeout = RheoLink_TIMEOUT);
+    uint8_t set_position(uint8_t pos, bool wait_for_completion = true, uint32_t timeout = RheoLink_TIMEOUT);
     uint8_t pos_min;
     uint8_t pos_max;
   private:
