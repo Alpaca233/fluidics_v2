@@ -336,7 +336,10 @@ uint8_t RheoLink::block_until_position_reached(uint8_t pos, uint32_t timeout){
     if(current_pos == pos){
       return 0;
     }
-
+    // If other position is reported, return an error
+    if(current_pos > pos_max){
+      return 1;
+    }
     // Wait a bit and check position again
     delay(5);
     current_pos = this->read_register(RheoLink_STATUS);
@@ -392,17 +395,29 @@ uint8_t RheoLink::set_position(uint8_t pos, bool wait_for_completion, uint32_t t
     return 11; // Position out of range error
   }
 
-  // Send the position command
-  uint8_t err = this->send_command(RheoLink_POS, pos);
+  uint8_t err;
+  uint8_t retry_count = 0;
+  uint8_t MAX_RETRIES = 3;
 
-  // If there was an error sending the command, return it
-  if (err != 0) {
-    return err;
-  }
+  do {
+    // Send the position command
+    err = this->send_command(RheoLink_POS, pos);
 
-  // If requested, wait for the valve to reach the specific position or just complete movement
-  if (wait_for_completion)
-      err = this->block_until_position_reached(pos, timeout);
+    // If there was an error sending the command, return it
+    if (err != 0) {
+      return err;
+    }
+
+    // If requested, wait for the valve to reach the specific position
+    if (wait_for_completion) {
+        err = this->block_until_position_reached(pos, timeout);
+        if (err == 0)
+          break;
+    }
+
+    retry_count++;
+
+  } while (retry_count <= MAX_RETRIES);
 
   return err;
 }
