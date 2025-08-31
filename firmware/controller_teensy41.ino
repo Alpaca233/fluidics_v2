@@ -207,6 +207,7 @@ void loop() {
           //          }
         }
         break;
+      /*
       case INTERNAL_STATE_MOVING_ROTARY: {
           // Check if we timed out
           // If any of the valves are reporting a value greater than their pos_max, value_moving becomes true
@@ -226,6 +227,7 @@ void loop() {
           }
         }
         break;
+      */
       case INTERNAL_STATE_CALIB_FLUID: {
           // Wait for timeout
           if (time_since_cmd_started > timeout_duration) {
@@ -530,8 +532,9 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         // Stop all operations
         disableControlLoops();
         valves.clear_all();
+        uint8_t err;
         for (uint8_t i = 0; i < SELECTORVALVE_QTY; i++) {
-          selectorvalves[i].send_command(RheoLink_POS, 1);
+          err = selectorvalves[i].set_position(1, true, RheoLink_TIMEOUT);
         }
 
         time_since_last_tx = 0;
@@ -539,7 +542,10 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         time_since_last_sensor = 0;
 
         state = INTERNAL_STATE_IDLE;
-        execution_status = COMPLETED_WITHOUT_ERRORS;
+        if (err != 0)
+          execution_status = CMD_EXECUTION_ERROR;
+        else
+          execution_status = COMPLETED_WITHOUT_ERRORS;
         cmd_uid = 0;
         integrate_flowrate = false;
         integrated_volume_uL = 0;
@@ -882,18 +888,15 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
           execution_status = CMD_INVALID;
           return;
         }
-        // Send the command
-        // Note - this is non-blocking, it takes ~1 second for the position to actually change
-        uint8_t result = selectorvalves[idx].send_command(RheoLink_POS, pos);
-        if (result > selectorvalves[idx].pos_max) {
+        // Set position
+        uint8_t err = selectorvalves[idx].set_position(pos, true, RheoLink_TIMEOUT);
+        if (err != 0) {
           execution_status = CMD_EXECUTION_ERROR;
         }
         else {
-          execution_status = IN_PROGRESS;
+          execution_status = COMPLETED_WITHOUT_ERRORS;
         }
-        state = INTERNAL_STATE_MOVING_ROTARY;
-        timeout_duration = RheoLink_TIMEOUT;
-
+        state = INTERNAL_STATE_IDLE;
       }
       break;
 
