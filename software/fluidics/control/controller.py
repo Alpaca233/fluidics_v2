@@ -742,6 +742,9 @@ class FluidController(Microcontroller):
 
 class FluidControllerSimulation():
     def __init__(self, serial_number, use_cobs = True, log_measurements = False, debug = False):
+        self.data = {
+            'selector_valves_pos': {0: 1, 1: 1, 2: 1, 3: 1, 4: 1}
+        }
         return
 
     def begin(self):
@@ -749,9 +752,18 @@ class FluidControllerSimulation():
 
     def send_command(self, command, *args):
         sleep(1)
+        if command == CMD_SET.SET_ROTARY_VALVE:
+            self.data['selector_valves_pos'][args[0]] = args[1]
+        return
 
     def send_command_blocking(self, command, *args):
         sleep(2)
+        if command == CMD_SET.SET_ROTARY_VALVE:
+            self.data['selector_valves_pos'][args[0]] = args[1]
+        return
 
     def wait_for_completion(self):
         pass
+
+    def get_mcu_status(self):
+        return self.data
