@@ -214,7 +214,7 @@ class SyringePumpSimulation():
     def extract(self, port, volume, speed_code):
         return 5
 
-    def dispense_to_waste(self, speed_code):
+    def dispense_to_waste(self, speed_code=None):
         return 5
 
     def abort(self):
