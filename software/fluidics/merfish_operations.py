@@ -11,26 +11,22 @@ class MERFISHOperations():
 
     def process_sequence(self, sequence):
         print(sequence)
-        try:
-            sequence_name = sequence['sequence_name']
-            port = int(sequence['fluidic_port'])
-            flow_rate = int(sequence['flow_rate'])
-            volume = int(sequence['volume'])
-            incubation_time = int(sequence['incubation_time'])
-            fill_tubing_with = sequence['fill_tubing_with']
-            try:
-                use_ports = sequence['use_ports']  # for use from Squid software widget
-            except:
-                use_ports = None
-        except:
-            raise ValueError("Invalid sequence")
+        seq_type = sequence['type']
 
-        if sequence_name.startswith("Flow "):
-            self.flow_reagent(port, flow_rate, volume, fill_tubing_with)
-        elif sequence_name in ("Priming", "Clean Up"):
-            self.priming_or_clean_up(port, flow_rate, volume, use_ports)
+        if seq_type == "flow_reagent":
+            self.flow_reagent(
+                int(sequence['fluidic_port']),
+                int(sequence['flow_rate']),
+                int(sequence['volume']),
+                sequence.get('fill_tubing_with'))
+        elif seq_type in ("priming", "clean_up"):
+            self.priming_or_clean_up(
+                int(sequence['fluidic_port']),
+                int(sequence['flow_rate']),
+                int(sequence['volume']),
+                sequence.get('use_ports'))
         else:
-            raise ValueError(f"Unknown sequence name: {sequence_name}")
+            raise ValueError(f"Unknown sequence type: {seq_type}")
 
     def _empty_syringe_pump_on_full(self, volume):
         if self.sp.get_current_volume() + self.sp.get_chained_volume() + volume > 0.95 * self.config.syringe_pump.volume_ul:

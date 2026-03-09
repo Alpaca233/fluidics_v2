@@ -2,23 +2,23 @@ import time
 import threading
 
 class ExperimentWorker:
-    def __init__(self, experiment_ops, df, config, callbacks=None):
+    def __init__(self, experiment_ops, sequences, config, callbacks=None):
         """
         Initialize ExperimentWorker with callbacks instead of signals.
-        
+
         Args:
             experiment_ops: The experiment operations object
-            df: DataFrame containing sequences
-            config: Configuration dictionary
+            sequences: list[dict] of validated sequence dicts, each with a 'type' key
+            config: Configuration object
             callbacks: Dictionary of callback functions with keys:
                 - 'update_progress': fn(index, sequence_num, status)
                 - 'on_error': fn(error_message)
                 - 'on_finished': fn()
-                - 'estimate_time': fn(time_to_finish, n_sequences)
+                - 'on_estimate': fn(time_to_finish, n_sequences)
         """
 
         self.experiment_ops = experiment_ops
-        self.sequences = df
+        self.sequences = sequences
         self.config = config
         self.callbacks = callbacks or {}
         self._abort_event = threading.Event()
@@ -35,22 +35,20 @@ class ExperimentWorker:
     def get_time_to_finish(self):
         total_time = 0
         total_sequences = 0
-        # TODO: define time calculation for different sequences in experiment operations classes
-        for index, seq in self.sequences.iterrows():
-            if seq['sequence_name'].startswith("Set Temperature"):
-                t = seq['volume'] / seq['flow_rate'] * 60
-                if seq['fill_tubing_with']:
-                    t += self.config.reagent_selection.common_tubing_fluid_amount_ul / seq['flow_rate'] * 60 + 1
-                if 'incubation_time' in seq and seq['incubation_time'] > 0:
-                    t += seq['incubation_time'] * 60
-                t += 2      # Time for opening selector valve port
-                t = t * seq['repeat']
+        for seq in self.sequences:
+            if seq['type'] == "set_temperature":
+                t = seq.get('incubation_time', 0) * 60 + 60
             else:
-                t = 60
-
+                t = seq.get('volume', 0) / max(seq.get('flow_rate', 1), 1) * 60
+                if seq.get('fill_tubing_with'):
+                    t += self.config.reagent_selection.common_tubing_fluid_amount_ul / max(seq.get('flow_rate', 1), 1) * 60 + 1
+                if seq.get('incubation_time', 0) > 0:
+                    t += seq['incubation_time'] * 60
+                t += 2
+            repeat = seq.get('repeat', 1)
+            t = t * repeat
             total_time += t
-            total_sequences += seq['repeat']
-
+            total_sequences += repeat
         return total_time, total_sequences
 
     def wait_for_incubation(self, time_minutes):
@@ -64,8 +62,8 @@ class ExperimentWorker:
     def run(self):
         current_sequence = 0
         try:
-            for index, seq in self.sequences.iterrows():
-                for r in range(seq['repeat']):
+            for index, seq in enumerate(self.sequences):
+                for r in range(seq.get('repeat', 1)):
                     try:
                         current_sequence += 1
                         self._call_callback('update_progress', index, current_sequence, "Started")
@@ -73,16 +71,17 @@ class ExperimentWorker:
                         if self._abort_event.is_set():
                             raise AbortRequested()
 
-                        if 'incubation_time' in seq and seq['incubation_time'] > 0:
+                        incubation_time = seq.get('incubation_time', 0)
+                        if incubation_time > 0:
                             self._call_callback('update_progress', index, current_sequence, "Incubating")
-                            self.wait_for_incubation(seq['incubation_time'])
+                            self.wait_for_incubation(incubation_time)
                         self._call_callback('update_progress', index, current_sequence, "Completed")
 
                     except AbortRequested:
                         self._call_callback('on_error', "Operation aborted by user")
                         return
                     except Exception as e:
-                        self._call_callback('on_error', 
+                        self._call_callback('on_error',
                             f"Error processing sequence {index} (repeat {r + 1}): {str(e)}")
                         return
 

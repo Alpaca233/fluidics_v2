@@ -1,8 +1,7 @@
 import argparse
 import sys
 import threading
-import pandas as pd
-
+from fluidics.sequences import load_sequences, get_included_sequences
 from fluidics.control.config import load_config
 from fluidics.control.controller import FluidControllerSimulation, FluidController
 from fluidics.control.syringe_pump import SyringePumpSimulation, SyringePump
@@ -82,8 +81,8 @@ def main():
 
     try:
         # Load sequences
-        df = pd.read_csv(args.path)
-        df = df[df['include'] == 1]
+        sequences = load_sequences(args.path)
+        included = get_included_sequences(sequences)
         # Load config
         config = load_config(args.config)
 
@@ -106,7 +105,7 @@ def main():
             'on_estimate': on_estimate
         }
 
-        worker = ExperimentWorker(experiment_ops, df, config, callbacks)
+        worker = ExperimentWorker(experiment_ops, included, config, callbacks)
         thread = threading.Thread(target=worker.run)
         thread.start()
 

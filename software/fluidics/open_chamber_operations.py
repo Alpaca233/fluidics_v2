@@ -21,32 +21,42 @@ class OpenChamberOperations():
         self.chamber_volume_ul = self.config.samples.chamber_volume_ul
 
     def process_sequence(self, sequence):
-        # TODO: In open chamber sequences, use a 'time' or 'power' field for operating disc pump. Planning to do this after moving to YAML
         print(sequence)
-        try:
-            sequence_name = sequence['sequence_name']
-            port = int(sequence['fluidic_port'])
-            flow_rate = int(sequence['flow_rate'])
-            volume = int(sequence['volume'])
-            incubation_time = int(sequence['incubation_time'])
-            fill_tubing_with = sequence['fill_tubing_with']
-        except:
-            raise ValueError("Invalid sequence")
+        seq_type = sequence['type']
 
-        if sequence_name.startswith("Add Reagent"):
-            self.add_reagent(port, flow_rate, volume, fill_tubing_with)
-        elif sequence_name.startswith("Clear Tubings and Add Reagent"):
-            self.clear_and_add_reagent(port, flow_rate, volume, fill_tubing_with)
-        elif sequence_name == "Wash with Constant Flow":
-            self.wash_with_constant_flow(port, flow_rate, volume, fill_tubing_with)
-        elif sequence_name == "Priming":
-            self.priming_or_clean_up(port, flow_rate, volume)
-        elif sequence_name == "Clean Up":
-            self.priming_or_clean_up(port, flow_rate, volume, clean_up=True)
-        elif sequence_name.startswith("Set Temperature"):
-            self.set_temperature(float(sequence_name.split()[-1]))
+        if seq_type == "add_reagent":
+            self.add_reagent(
+                int(sequence['fluidic_port']),
+                int(sequence['flow_rate']),
+                int(sequence['volume']),
+                sequence.get('fill_tubing_with'))
+        elif seq_type == "clear_and_add_reagent":
+            self.clear_and_add_reagent(
+                int(sequence['fluidic_port']),
+                int(sequence['flow_rate']),
+                int(sequence['volume']),
+                sequence.get('fill_tubing_with'))
+        elif seq_type == "wash_constant_flow":
+            self.wash_with_constant_flow(
+                int(sequence['fluidic_port']),
+                int(sequence['flow_rate']),
+                int(sequence['volume']),
+                sequence.get('fill_tubing_with'))
+        elif seq_type == "priming":
+            self.priming_or_clean_up(
+                int(sequence['fluidic_port']),
+                int(sequence['flow_rate']),
+                int(sequence['volume']))
+        elif seq_type == "clean_up":
+            self.priming_or_clean_up(
+                int(sequence['fluidic_port']),
+                int(sequence['flow_rate']),
+                int(sequence['volume']),
+                clean_up=True)
+        elif seq_type == "set_temperature":
+            self.set_temperature(float(sequence['temperature']))
         else:
-            raise ValueError(f"Unknown sequence name: {sequence_name}")
+            raise ValueError(f"Unknown sequence type: {seq_type}")
 
     def _empty_syringe_pump_on_full(self, volume):
         if self.sp.get_current_volume() + self.sp.get_chained_volume() + volume > 0.95 * self.syringe_volume_ul:
