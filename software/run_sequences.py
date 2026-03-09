@@ -16,15 +16,15 @@ from fluidics.control._def import CMD_SET
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Run sequences from a CSV file'
+        description='Run sequences from a YAML or CSV file'
     )
     parser.add_argument(
         '--path', required=True,
-        help='Path to the CSV file containing sequences'
+        help='Path to the sequence file (YAML or CSV)'
     )
     parser.add_argument(
-        '--config', default='config.json',
-        help='Path to configuration file (JSON or YAML)'
+        '--config', default='config.yaml',
+        help='Path to configuration file (YAML or JSON)'
     )
     parser.add_argument(
         '--simulation',

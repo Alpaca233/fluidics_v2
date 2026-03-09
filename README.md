@@ -37,7 +37,7 @@ python list_controllers.py
 
 **2. Create a configuration file** based on the examples in `sample_config/`:
 
-- `MERFISH_config.yaml` — MERFISH flow cell setup
+- `flow_cell_config.yaml` — Flow cell setup
 - `open_chamber_config.yaml` — Open chamber setup
 
 Key fields to set:

@@ -13,11 +13,11 @@ Python control software for the Fluidics v2 microfluidics system. Provides a PyQ
 python gui.py
 
 # CLI experiment runner
-python run_sequences.py --path sample_sequences/merfish-experiment.csv --config sample_config/flow_cell_config.yaml
-python run_sequences.py --path sample_sequences/merfish-experiment.csv --config sample_config/flow_cell_config.yaml --simulation
+python run_sequences.py --path sample_sequences/merfish-experiment.yaml --config sample_config/flow_cell_config.yaml
+python run_sequences.py --path sample_sequences/merfish-experiment.yaml --config sample_config/flow_cell_config.yaml --simulation
 
 # Config conversion (legacy JSON → YAML v2.0)
-python convert_config.py sample_config/MERFISH_config.json
+python convert_config.py path/to/legacy_config.json
 
 # Device discovery
 python list_controllers.py
@@ -85,9 +85,9 @@ Speed codes (0–40) map to stroke times via `SPEED_SEC_MAPPING`. Use `flow_rate
 ### Experiment Execution Flow
 
 1. YAML config defines hardware serial numbers, valve IDs, reagent mappings, tubing volumes
-2. CSV sequences define operations: `sequence_name, fluidic_port, flow_rate, volume, incubation_time, repeat, fill_tubing_with, include`
+2. YAML sequences define operations as typed dicts with a `type` discriminator field (legacy CSV also supported)
 3. `config.application` (`"Flow Cell"` or `"Open Chamber"`) selects the operations class
-4. `ExperimentWorker` iterates included CSV rows (`include == 1`), calling `process_sequence()` on the operations class
+4. `ExperimentWorker` iterates the sequence list, calling `process_sequence()` on the operations class
 5. Worker runs in a separate thread with callback-based progress reporting and abort support via `threading.Event`
 
 ### Operations Classes
@@ -108,7 +108,7 @@ Speed codes (0–40) map to stroke times via `SPEED_SEC_MAPPING`. Use `flow_rate
 ## Key Conventions
 
 - `fluidics/control/tecancavro/` is a vendored library for Tecan Cavro syringe pump protocol — avoid modifying
-- Config files in `sample_config/` (YAML), sequence CSVs in `sample_sequences/`
+- Config files in `sample_config/` (YAML), sequence files in `sample_sequences/` (YAML preferred, CSV supported for legacy)
 - The `abort` pattern: hardware classes expose `abort()` / `reset_abort()` and check `is_aborted` before operations
 - `send_command_blocking()` = `send_command()` + `wait_for_completion()` (polls MCU status until not `IN_PROGRESS`)
 - `tests/startup.py` imports from `control.` not `fluidics.control.` — must be run from `software/` directory

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 import yaml
 from pydantic import BaseModel
@@ -59,7 +59,7 @@ class FluidicsConfig(BaseModel):
     sample_selection_inlet: Optional[SampleSelectionInletConfig] = None
     samples: Optional[SamplesConfig] = None
     temperature_controller: Optional[TemperatureControllerConfig] = None
-    application: str
+    application: Literal["Flow Cell", "Open Chamber"]
 
 
 # --- Legacy JSON to v2.0 YAML Conversion ---

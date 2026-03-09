@@ -7,7 +7,7 @@ from typing import Annotated, Literal, Optional, Union
 
 import yaml
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Discriminator, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, TypeAdapter
 
 
 # --- Pydantic Models ---
@@ -17,17 +17,17 @@ class SequenceBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: Optional[str] = None  # custom user label
-    repeat: int = 1
+    repeat: int = Field(default=1, ge=1)
     include: bool = True
-    incubation_time: float = 0
+    incubation_time: float = Field(default=0, ge=0)
 
 
 class FluidicSequence(SequenceBase):
     """Base for sequences that operate on a fluidic port."""
 
-    fluidic_port: int
-    flow_rate: int
-    volume: int
+    fluidic_port: int = Field(ge=1)
+    flow_rate: int = Field(gt=0)
+    volume: int = Field(gt=0)
 
 
 class FlowReagentSequence(FluidicSequence):
@@ -227,7 +227,7 @@ def save_sequences_yaml(sequences: list[dict], path: str) -> None:
         reordered.append(ordered)
 
     with open(path, "w") as f:
-        yaml.dump(reordered, f, default_flow_style=False, sort_keys=False)
+        yaml.dump({"sequences": reordered}, f, default_flow_style=False, sort_keys=False)
 
 
 def get_included_sequences(sequences: list[dict]) -> list[dict]:

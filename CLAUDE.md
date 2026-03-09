@@ -29,7 +29,7 @@ cd software
 python gui.py                                          # Launch GUI
 python run_sequences.py --path <yaml> --config <yaml>  # Run sequences from CLI
 python list_controllers.py                             # Discover serial devices
-python run_sequences.py --path sample_sequences/merfish-experiment.yaml --config sample_config/MERFISH_config.yaml --simulation  # Simulation mode (no hardware)
+python run_sequences.py --path sample_sequences/merfish-experiment.yaml --config sample_config/flow_cell_config.yaml --simulation  # Simulation mode (no hardware)
 ```
 
 **Python dependencies:** PyQt5, pandas, matplotlib, pyserial, cobs, numpy, pydantic, pyyaml

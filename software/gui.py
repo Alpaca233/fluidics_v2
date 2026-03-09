@@ -1,7 +1,5 @@
 import os
 import sys
-import csv
-import json
 import time
 import threading
 import argparse
@@ -467,7 +465,7 @@ class SequencesWidget(QWidget):
         self.timeLabel.setText(f"{hours:02d}:{minutes:02d}:{seconds:02d} remaining")
             
         # Update progress bar percentage
-        progress = min(100, int((self.elapsed_time / self.total_time) * 100))
+        progress = min(100, int((self.elapsed_time / max(self.total_time, 1)) * 100))
         self.progressBar.setValue(progress)
             
         if remaining <= 0:
@@ -793,7 +791,7 @@ class ManualControlWidget(QWidget):
 
     def closeEvent(self, event):
         self.progress_timer.stop()
-        self.position_timer.stop()
+        self.plunger_timer.stop()
         super().closeEvent(event)
 
 
