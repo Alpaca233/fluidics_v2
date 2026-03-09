@@ -1,3 +1,4 @@
+import os
 import sys
 import csv
 import json
@@ -33,7 +34,13 @@ from matplotlib.figure import Figure
 import warnings
 warnings.filterwarnings('ignore')
 
-def load_config_file(config_path='./config.yaml'):
+def load_config_file(config_path=None):
+    if config_path is None:
+        # Try YAML first, fall back to JSON (which auto-converts)
+        if os.path.exists('./config.yaml'):
+            config_path = './config.yaml'
+        else:
+            config_path = './config.json'
     return load_config(config_path)
 
 

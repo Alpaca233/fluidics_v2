@@ -1,7 +1,5 @@
 import argparse
 import sys
-import json
-import time
 import threading
 import pandas as pd
 
@@ -38,13 +36,15 @@ def parse_args():
     return parser.parse_args()
 
 def initialize_hardware(simulation, config):
+    temperatureController = None
+
     if simulation:
         controller = FluidControllerSimulation(config.microcontroller.serial_number)
         syringePump = SyringePumpSimulation(
             sn=config.syringe_pump.serial_number,
             syringe_ul=config.syringe_pump.volume_ul,
             speed_code_limit=config.syringe_pump.speed_code_limit,
-            waste_port=3)
+            waste_port=config.syringe_pump.waste_port)
         if config.temperature_controller is not None:
             temperatureController = TCMControllerSimulation()
     else:
@@ -53,14 +53,14 @@ def initialize_hardware(simulation, config):
             sn=config.syringe_pump.serial_number,
             syringe_ul=config.syringe_pump.volume_ul,
             speed_code_limit=config.syringe_pump.speed_code_limit,
-            waste_port=3)
+            waste_port=config.syringe_pump.waste_port)
         if config.temperature_controller is not None:
             temperatureController = TCMController(config.temperature_controller.serial_number)
 
     controller.begin()
     controller.send_command(CMD_SET.CLEAR)
 
-    return controller, syringePump
+    return controller, syringePump, temperatureController
 
 def update_progress(index, sequence_num, status):
     print(f"Sequence {index} ({sequence_num}): {status}")
@@ -77,6 +77,9 @@ def on_estimate(time_to_finish, n_sequences):
 def main():
     args = parse_args()
 
+    syringePump = None
+    thread = None
+
     try:
         # Load sequences
         df = pd.read_csv(args.path)
@@ -84,7 +87,7 @@ def main():
         # Load config
         config = load_config(args.config)
 
-        controller, syringePump = initialize_hardware(args.simulation, config)
+        controller, syringePump, temperatureController = initialize_hardware(args.simulation, config)
 
         selectorValveSystem = SelectorValveSystem(controller, config)
         if config.application == "Open Chamber":
@@ -94,7 +97,7 @@ def main():
         if config.application == "Flow Cell":
             experiment_ops = MERFISHOperations(config, syringePump, selectorValveSystem)
         elif config.application == "Open Chamber":
-            experiment_ops = OpenChamberOperations(config, syringePump, selectorValveSystem, discPump)
+            experiment_ops = OpenChamberOperations(config, syringePump, selectorValveSystem, discPump, temperatureController)
 
         callbacks = {
             'update_progress': update_progress,
@@ -111,12 +114,13 @@ def main():
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
-        if thread:
+        if thread is not None:
             thread.join()
         sys.exit(1)
     finally:
-        syringePump.reset_abort()
-        syringePump.close()
+        if syringePump is not None:
+            syringePump.reset_abort()
+            syringePump.close()
 
 if __name__ == '__main__':
     main()
