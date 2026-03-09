@@ -1,7 +1,4 @@
 # tests/unit/test_sequences.py
-import os
-import tempfile
-
 import pytest
 import yaml
 from pydantic import ValidationError

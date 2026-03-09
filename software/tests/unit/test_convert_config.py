@@ -1,7 +1,4 @@
 # tests/unit/test_convert_config.py
-import json
-
-import pytest
 import yaml
 
 from convert_config import convert_json_to_yaml
@@ -16,7 +13,8 @@ class TestConvertJsonToYaml:
         result_path = convert_json_to_yaml(json_path, yaml_path)
 
         assert result_path == yaml_path
-        config = FluidicsConfig(**yaml.safe_load(open(yaml_path)))
+        with open(yaml_path) as f:
+            config = FluidicsConfig(**yaml.safe_load(f))
         assert config.application == "Flow Cell"
 
     def test_open_chamber_roundtrip(self, fixtures_dir, tmp_path):
@@ -25,7 +23,8 @@ class TestConvertJsonToYaml:
 
         result_path = convert_json_to_yaml(json_path, yaml_path)
 
-        config = FluidicsConfig(**yaml.safe_load(open(yaml_path)))
+        with open(yaml_path) as f:
+            config = FluidicsConfig(**yaml.safe_load(f))
         assert config.application == "Open Chamber"
 
     def test_default_output_path(self, fixtures_dir, tmp_path):

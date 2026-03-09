@@ -31,8 +31,6 @@ def _fast_clock(monkeypatch):
     def fake_time_fn():
         return fake_time[0]
 
-    _real_event_wait = threading.Event.wait
-
     def fake_event_wait(self, timeout=None):
         if timeout is not None:
             fake_time[0] += timeout

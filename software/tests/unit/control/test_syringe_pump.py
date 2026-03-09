@@ -3,17 +3,6 @@ import pytest
 from fluidics.control.syringe_pump import SyringePump, SyringePumpSimulation
 
 
-@pytest.fixture
-def pump():
-    """Create a SyringePumpSimulation for testing pure-logic methods.
-
-    SyringePumpSimulation.flow_rate_to_speed_code returns a fixed value,
-    so we use the real SyringePump class method via the SPEED_SEC_MAPPING.
-    """
-    # We test the algorithm using the class-level mapping directly
-    return None  # Tests use class methods / standalone logic
-
-
 class TestSpeedSecMapping:
     def test_mapping_length(self):
         assert len(SyringePump.SPEED_SEC_MAPPING) == 41  # speed codes 0-40
