@@ -1,18 +1,19 @@
+import os
 import sys
-import csv
-import json
 import time
 import threading
 import argparse
 from datetime import datetime
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout,
+                             QHBoxLayout, QPushButton, QTreeWidget, QTreeWidgetItem,
                              QHeaderView, QCheckBox, QFileDialog, QMessageBox, QComboBox,
-                             QStyledItemDelegate, QSpinBox, QLabel, QProgressBar, QLineEdit, 
-                             QGroupBox, QGridLayout, QSizePolicy)
+                             QSpinBox, QLabel, QProgressBar, QLineEdit,
+                             QGroupBox, QGridLayout, QSizePolicy, QDialog, QFormLayout,
+                             QDoubleSpinBox, QDialogButtonBox)
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, Q_ARG, QMetaObject, QEvent, QCoreApplication
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QBrush
 
+from fluidics.control.config import load_config
 from fluidics.control.controller import FluidController, FluidControllerSimulation
 from fluidics.control.syringe_pump import SyringePump, SyringePumpSimulation
 from fluidics.control.selector_valve import SelectorValveSystem
@@ -24,71 +25,25 @@ from fluidics.control.tecancavro.tecanapi import TecanAPITimeout
 from fluidics.merfish_operations import MERFISHOperations
 from fluidics.open_chamber_operations import OpenChamberOperations
 from fluidics.experiment_worker import ExperimentWorker
+from fluidics.sequences import (
+    load_sequences, save_sequences_yaml, get_included_sequences,
+    get_fields_for_type, SEQUENCE_TYPES, SEQUENCE_TYPE_LABELS, APPLICATION_SEQUENCES
+)
 
-import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 import warnings
 warnings.filterwarnings('ignore')
 
-def load_config(config_path='./config.json'):
-    with open(config_path, 'r') as f:
-        return json.load(f)
-
-
-class SpinBoxDelegate(QStyledItemDelegate):
-    def createEditor(self, parent, option, index):
-        editor = QSpinBox(parent)
-        editor.setMinimum(0)
-        editor.setMaximum(10000)  # Set a reasonable maximum
-        editor.setSingleStep(1)
-        editor.setButtonSymbols(QSpinBox.UpDownArrows)  # Show up/down arrows by default
-        return editor
-
-    def setEditorData(self, spinBox, index):
-        value = index.model().data(index, Qt.EditRole)
-        spinBox.setValue(int(value))
-
-    def setModelData(self, spinBox, model, index):
-        spinBox.interpretText()
-        value = spinBox.value()
-        model.setData(index, value, Qt.EditRole)
-
-    def paint(self, painter, option, index):
-        # This ensures the spinbox is always visible
-        if not self.parent().indexWidget(index):
-            spinBox = QSpinBox(self.parent(), minimum=0, maximum=10000, singleStep=1)
-            spinBox.setValue(int(index.data()))
-            spinBox.valueChanged.connect(lambda value: self.parent().model().setData(index, value, Qt.EditRole))
-            self.parent().setIndexWidget(index, spinBox)
-
-
-class PortDelegate(QStyledItemDelegate):
-    def __init__(self, parent=None, ports=[]):
-        super().__init__(parent)
-        self.ports = ports
-
-    def createEditor(self, parent, option, index):
-        editor = QComboBox(parent)
-        editor.addItems(self.ports)
-        return editor
-
-    def setEditorData(self, comboBox, index):
-        value = index.model().data(index, Qt.EditRole)
-        comboBox.setCurrentText(value)
-
-    def setModelData(self, comboBox, model, index):
-        value = int(comboBox.currentText())
-        model.setData(index, value, Qt.EditRole)
-
-    def paint(self, painter, option, index):
-        if not self.parent().indexWidget(index):
-            comboBox = QComboBox(self.parent())
-            comboBox.addItems(map(str, self.ports))
-            comboBox.setCurrentText(str(index.data()))
-            comboBox.currentTextChanged.connect(lambda text: self.parent().model().setData(index, text, Qt.EditRole))
-            self.parent().setIndexWidget(index, comboBox)
+def load_config_file(config_path=None):
+    if config_path is None:
+        # Try YAML first, fall back to JSON (which auto-converts)
+        if os.path.exists('./config.yaml'):
+            config_path = './config.yaml'
+        else:
+            config_path = './config.json'
+    return load_config(config_path)
 
 
 class WorkerEvent(QEvent):
@@ -98,6 +53,105 @@ class WorkerEvent(QEvent):
         super().__init__(WorkerEvent.EVENT_TYPE)
         self.callback_name = callback_name
         self.args = args
+
+
+class AddSequenceDialog(QDialog):
+    """Dialog for adding a new sequence to the tree."""
+
+    def __init__(self, parent, application, port_names):
+        super().__init__(parent)
+        self.setWindowTitle("Add Sequence")
+        self.application = application
+        self.port_names = port_names
+        self.result_dict = None
+        self._field_widgets = {}
+
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout(self)
+
+        # Sequence type selector
+        type_layout = QHBoxLayout()
+        type_layout.addWidget(QLabel("Type:"))
+        self.typeCombo = QComboBox()
+        available_types = APPLICATION_SEQUENCES.get(self.application, list(SEQUENCE_TYPES.keys()))
+        for seq_type in available_types:
+            self.typeCombo.addItem(SEQUENCE_TYPE_LABELS.get(seq_type, seq_type), seq_type)
+        type_layout.addWidget(self.typeCombo)
+        layout.addLayout(type_layout)
+
+        # Form for fields
+        self.formLayout = QFormLayout()
+        layout.addLayout(self.formLayout)
+
+        # OK/Cancel
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        layout.addWidget(self.buttonBox)
+
+        # Connect type change
+        self.typeCombo.currentIndexChanged.connect(self._rebuild_fields)
+        self._rebuild_fields()
+
+    def _rebuild_fields(self):
+        # Clear existing form rows
+        while self.formLayout.rowCount() > 0:
+            self.formLayout.removeRow(0)
+        self._field_widgets.clear()
+
+        seq_type = self.typeCombo.currentData()
+        fields = get_fields_for_type(seq_type)
+
+        for field_name, field_info in fields.items():
+            if field_name == 'include':
+                continue  # handled by tree checkbox
+
+            default = field_info.default if field_info.default is not None else None
+
+            if field_name == 'name':
+                widget = QLineEdit()
+                if default is not None:
+                    widget.setText(str(default))
+            elif field_name == 'fluidic_port':
+                widget = QComboBox()
+                for i, pname in enumerate(self.port_names):
+                    widget.addItem(pname, i + 1)
+                if default is not None:
+                    widget.setCurrentIndex(max(0, int(default) - 1))
+            elif field_name in ('temperature', 'incubation_time'):
+                widget = QDoubleSpinBox()
+                widget.setDecimals(2)
+                widget.setRange(0, 100000)
+                if default is not None:
+                    widget.setValue(float(default))
+            else:
+                # int fields: flow_rate, volume, repeat, fill_tubing_with
+                widget = QSpinBox()
+                widget.setRange(0, 100000)
+                if default is not None:
+                    widget.setValue(int(default))
+
+            self._field_widgets[field_name] = widget
+            self.formLayout.addRow(field_name, widget)
+
+    def accept(self):
+        seq_type = self.typeCombo.currentData()
+        d = {'type': seq_type}
+        for field_name, widget in self._field_widgets.items():
+            if isinstance(widget, QLineEdit):
+                val = widget.text().strip()
+                if val:
+                    d[field_name] = val
+            elif isinstance(widget, QComboBox):
+                d[field_name] = widget.currentData()
+            elif isinstance(widget, QDoubleSpinBox):
+                d[field_name] = widget.value()
+            elif isinstance(widget, QSpinBox):
+                d[field_name] = widget.value()
+        self.result_dict = d
+        super().accept()
 
 
 class SequencesWidget(QWidget):
@@ -112,32 +166,41 @@ class SequencesWidget(QWidget):
         self.discPump = disc_pump
         self.temperatureController = temperature_controller
 
-        self.sequences = pd.DataFrame()
         self.experiment_ops = None  # Will be set based on the selected application
         self.worker = None
 
-        if self.config['application'] == 'MERFISH':
+        if self.config.application == 'Flow Cell':
             self.experiment_ops = MERFISHOperations(self.config, self.syringePump, self.selectorValveSystem)
-        elif self.config['application'] == "Open Chamber":
+        elif self.config.application == "Open Chamber":
             self.experiment_ops = OpenChamberOperations(self.config, self.syringePump, self.selectorValveSystem, self.discPump, self.temperatureController)
+        else:
+            raise ValueError(f"Unsupported application: {self.config.application!r}")
 
         self.initUI()
 
     def initUI(self):
         layout = QVBoxLayout()
 
-        # Table for displaying sequences
-        # TODO: use YAML for sequences
-        self.table = QTableWidget()
-        self.setupTable()
-        layout.addWidget(self.table)
+        # Tree for displaying sequences
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Property", "Value"])
+        self.tree.setColumnCount(2)
+        self.tree.setEditTriggers(QTreeWidget.NoEditTriggers)
+        self.tree.itemDoubleClicked.connect(self._onItemDoubleClicked)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        layout.addWidget(self.tree)
 
         # Buttons
         buttonLayout = QHBoxLayout()
-        self.loadButton = QPushButton("Load CSV")
-        self.loadButton.clicked.connect(self.loadCSV)
-        self.saveButton = QPushButton("Save CSV")
-        self.saveButton.clicked.connect(self.saveCSV)
+        self.loadButton = QPushButton("Load")
+        self.loadButton.clicked.connect(self.loadSequences)
+        self.saveButton = QPushButton("Save")
+        self.saveButton.clicked.connect(self.saveSequences)
+        self.addButton = QPushButton("Add Sequence")
+        self.addButton.clicked.connect(self.addSequence)
+        self.removeButton = QPushButton("Remove Sequence")
+        self.removeButton.clicked.connect(self.removeSequence)
         self.selectAllButton = QPushButton("Select All")
         self.selectAllButton.clicked.connect(self.selectAll)
         self.selectNoneButton = QPushButton("Select None")
@@ -150,6 +213,8 @@ class SequencesWidget(QWidget):
 
         buttonLayout.addWidget(self.loadButton)
         buttonLayout.addWidget(self.saveButton)
+        buttonLayout.addWidget(self.addButton)
+        buttonLayout.addWidget(self.removeButton)
         buttonLayout.addWidget(self.selectAllButton)
         buttonLayout.addWidget(self.selectNoneButton)
         buttonLayout.addWidget(self.runButton)
@@ -180,143 +245,183 @@ class SequencesWidget(QWidget):
         self.elapsed_time = 0
         self.total_time = None
 
-    def setupTable(self):
-        self.table.setColumnCount(8)
-        self.table.setHorizontalHeaderLabels(["Sequence Name", "Fluidic Port", "Flow Rate (μL/min)", 
-                                              "Volume (μL)", "Incubation Time (min)", "Repeat", "Fill Tubing With", "Include"])
-        # Set up delegates
-        spinBoxDelegate = SpinBoxDelegate(self.table)
-        self.table.setItemDelegateForColumn(2, spinBoxDelegate)  # Flow Rate
-        self.table.setItemDelegateForColumn(3, spinBoxDelegate)  # Volume
-        self.table.setItemDelegateForColumn(4, spinBoxDelegate)  # Incubation Time
-        self.table.setItemDelegateForColumn(5, spinBoxDelegate)  # Repeat
-        self.table.setItemDelegateForColumn(6, spinBoxDelegate)  # Fill Tubing With
+    FIELD_LABELS = {
+        'fluidic_port': 'Fluidic Port',
+        'flow_rate': 'Flow Rate (\u00b5L/min)',
+        'volume': 'Volume (\u00b5L)',
+        'fill_tubing_with': 'Fill Tubing With',
+        'incubation_time': 'Incubation Time (min)',
+        'repeat': 'Repeat',
+        'temperature': 'Temperature (\u00b0C)',
+    }
 
-        # Set up port delegate with simplified port numbers
-        ports = self.selectorValveSystem.get_port_names()
-        self.portDelegate = PortDelegate(self.table, ports)
-        self.table.setItemDelegateForColumn(1, self.portDelegate)  # Fluidic Port
+    def _onItemDoubleClicked(self, item, column):
+        """Allow editing: name (col 0) for top-level items, value (col 1) for children."""
+        is_top_level = item.parent() is None
+        if is_top_level and column == 0:
+            self.tree.editItem(item, 0)
+        elif not is_top_level and column == 1:
+            self.tree.editItem(item, 1)
 
-        self.table.setStyleSheet("QHeaderView::section { padding-left: 5px; padding-right: 5px; }")
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+    def populateTree(self, sequences):
+        """Populate the tree widget from a list of sequence dicts."""
+        self.tree.clear()
+        for seq in sequences:
+            self._addSequenceItem(seq)
 
-    def loadCSV(self):
-        # Todo: use same load/save csv and runSelectedSequences for different applications
-        fileName, _ = QFileDialog.getOpenFileName(self, "Open CSV", "", "CSV Files (*.csv)")
+    def _addSequenceItem(self, seq):
+        """Add a single sequence dict as a top-level tree item."""
+        seq_type = seq.get('type', '')
+        type_label = SEQUENCE_TYPE_LABELS.get(seq_type, seq_type)
+        name = seq.get('name') or ''
+
+        display_name = name if name else type_label
+        item = QTreeWidgetItem([display_name, f"Type: {type_label}"])
+        item.setData(0, Qt.UserRole, seq_type)
+        item.setFlags(item.flags() | Qt.ItemIsEditable)
+
+        # Include checkbox
+        include = seq.get('include', True)
+        item.setCheckState(0, Qt.Checked if include else Qt.Unchecked)
+
+        # Determine which fields to show
+        try:
+            type_fields = get_fields_for_type(seq_type)
+        except ValueError:
+            type_fields = {}
+
+        # Required fields (no default or default is a required sentinel)
+        required_field_names = set()
+        for fname, finfo in type_fields.items():
+            if fname in ('type', 'include', 'name'):
+                continue
+            if finfo.is_required():
+                required_field_names.add(fname)
+
+        # Add child items for fields (excluding 'type', 'include', 'name')
+        for fname, finfo in type_fields.items():
+            if fname in ('type', 'include', 'name'):
+                continue
+            value = seq.get(fname)
+            default = finfo.default
+
+            # Show field if it has a non-None, non-default value, or is required
+            if fname in required_field_names or (value is not None and value != default):
+                display_value = str(value) if value is not None else ''
+                display_label = self.FIELD_LABELS.get(fname, fname)
+                child = QTreeWidgetItem([display_label, display_value])
+                child.setData(0, Qt.UserRole, fname)
+                child.setFlags(child.flags() | Qt.ItemIsEditable)
+                item.addChild(child)
+
+        self.tree.addTopLevelItem(item)
+        item.setExpanded(True)
+
+    def getSequences(self, selected_only=False):
+        """Read the tree back into a list of sequence dicts."""
+        sequences = []
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            seq_type = item.data(0, Qt.UserRole)
+            include = item.checkState(0) == Qt.Checked
+
+            if selected_only and not include:
+                continue
+
+            seq = {'type': seq_type, 'include': include}
+
+            # Read name from top-level item text (skip if it matches default type label)
+            name = item.text(0).strip()
+            type_label = SEQUENCE_TYPE_LABELS.get(seq_type, '')
+            if name and name != type_label:
+                seq['name'] = name
+
+            for j in range(item.childCount()):
+                child = item.child(j)
+                fname = child.data(0, Qt.UserRole) or child.text(0)
+                raw_value = child.text(1).strip()
+
+                if not raw_value:
+                    continue
+
+                # Store raw strings — pydantic will coerce types during validation
+                seq[fname] = raw_value
+
+            sequences.append(seq)
+        return sequences
+
+    def loadSequences(self):
+        fileName, _ = QFileDialog.getOpenFileName(
+            self, "Open Sequences", "",
+            "Sequence Files (*.yaml *.yml *.csv)")
         if fileName:
             try:
-                # Read CSV into DataFrame
-                self.sequences = pd.read_csv(fileName, dtype={
-                    'sequence_name': str,
-                    'fluidic_port': int,
-                    'flow_rate': int,
-                    'volume': int,
-                    'incubation_time': int,
-                    'repeat': int,
-                    'fill_tubing_with': int,
-                    'include': int
-                })
-
-                # Update table
-                self.table.setRowCount(0)
-                for idx, row in self.sequences.iterrows():
-                    rowPosition = self.table.rowCount()
-                    self.table.insertRow(rowPosition)
-
-                    # Set items
-                    self.table.setItem(rowPosition, 0, QTableWidgetItem(row['sequence_name']))
-                    self.table.setItem(rowPosition, 1, QTableWidgetItem(self.portDelegate.ports[row['fluidic_port'] - 1]))
-                    self.table.setItem(rowPosition, 2, QTableWidgetItem(str(row['flow_rate'])))
-                    self.table.setItem(rowPosition, 3, QTableWidgetItem(str(row['volume'])))
-                    self.table.setItem(rowPosition, 4, QTableWidgetItem(str(row['incubation_time'])))
-                    self.table.setItem(rowPosition, 5, QTableWidgetItem(str(row['repeat'])))
-                    self.table.setItem(rowPosition, 6, QTableWidgetItem(str(row['fill_tubing_with'])))
-
-                    # Set checkbox
-                    checkbox = QCheckBox()
-                    checkbox.setChecked(row['include'] == 1)
-                    self.table.setCellWidget(rowPosition, 7, checkbox)
-
-                    # Make sequence name non-editable
-                    self.table.item(rowPosition, 0).setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-
+                sequences = load_sequences(fileName)
+                self.populateTree(sequences)
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to load CSV: {str(e)}")
-                return
+                QMessageBox.critical(self, "Error", f"Failed to load sequences: {str(e)}")
 
-    def saveCSV(self):
-        fileName, _ = QFileDialog.getSaveFileName(self, "Save CSV", "", "CSV Files (*.csv)")
+    def saveSequences(self):
+        fileName, _ = QFileDialog.getSaveFileName(
+            self, "Save Sequences", "",
+            "YAML Files (*.yaml)")
         if fileName:
-            if not fileName.lower().endswith('.csv'):
-                fileName += '.csv'
+            if not fileName.lower().endswith(('.yaml', '.yml')):
+                fileName += '.yaml'
             try:
-                # Update sequences from current table state and save
-                self.getSequencesDF(False).to_csv(fileName, index=False)
-                
+                save_sequences_yaml(self.getSequences(), fileName)
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to save CSV: {str(e)}")
-                return
+                QMessageBox.critical(self, "Error", f"Failed to save sequences: {str(e)}")
 
-    def getSequencesDF(self, selected_only=False):
-        # Create DataFrame from current table state
-        data = []
-        for row in range(self.table.rowCount()):
-            port_item = self.table.item(row, 1)
-            port = int(port_item.text().split(' ')[1][:-1])
+    def addSequence(self):
+        port_names = self.selectorValveSystem.get_port_names()
+        dialog = AddSequenceDialog(self, self.config.application, port_names)
+        if dialog.exec_() == QDialog.Accepted and dialog.result_dict:
+            self._addSequenceItem(dialog.result_dict)
 
-            row_data = {
-                'sequence_name': self.table.item(row, 0).text(),
-                'fluidic_port': port,
-                'flow_rate': float(self.table.item(row, 2).text()),
-                'volume': float(self.table.item(row, 3).text()),
-                'incubation_time': int(self.table.item(row, 4).text()),
-                'repeat': int(self.table.item(row, 5).text()),
-                'fill_tubing_with': int(self.table.item(row, 6).text()),
-                'include': 1 if self.table.cellWidget(row, 7).isChecked() else 0
-            }
-            data.append(row_data)
-        
-        # Update stored sequences
-        self.sequences = pd.DataFrame(data)
+    def removeSequence(self):
+        current = self.tree.currentItem()
+        if current is None:
+            return
+        # If a child is selected, remove its parent (the top-level sequence)
+        if current.parent() is not None:
+            current = current.parent()
+        index = self.tree.indexOfTopLevelItem(current)
+        if index >= 0:
+            self.tree.takeTopLevelItem(index)
 
-        # Return selected sequences or all sequences
-        if selected_only:
-            return self.sequences[self.sequences['include'] == 1].copy()
-        return self.sequences.copy()
-        
     def selectAll(self):
-        for row in range(self.table.rowCount()):
-            self.table.cellWidget(row, 7).setChecked(True)
+        for i in range(self.tree.topLevelItemCount()):
+            self.tree.topLevelItem(i).setCheckState(0, Qt.Checked)
 
     def selectNone(self):
-        for row in range(self.table.rowCount()):
-            self.table.cellWidget(row, 7).setChecked(False)
+        for i in range(self.tree.topLevelItemCount()):
+            self.tree.topLevelItem(i).setCheckState(0, Qt.Unchecked)
 
     def highlightRow(self, row_index):
-        """Highlight the currently running sequence"""
-        # Reset all row highlights
-        for row in range(self.table.rowCount()):
-            for col in range(self.table.columnCount()):
-                item = self.table.item(row, col)
-                if item:
-                    item.setBackground(QColor('white'))
-        
+        """Highlight the currently running sequence in the tree."""
+        white_brush = QBrush(QColor('white'))
+        blue_brush = QBrush(QColor('lightblue'))
+
+        # Reset all highlights
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            item.setBackground(0, white_brush)
+            item.setBackground(1, white_brush)
+
         # Set new highlighting
-        if row_index is not None:
-            for col in range(self.table.columnCount()):
-                item = self.table.item(row_index, col)
-                if item:
-                    item.setBackground(QColor('lightblue'))
+        if row_index is not None and row_index < self.tree.topLevelItemCount():
+            item = self.tree.topLevelItem(row_index)
+            item.setBackground(0, blue_brush)
+            item.setBackground(1, blue_brush)
 
     def runSelectedSequences(self):
-        # TODO: map speed codes
-        if self.table.rowCount() == 0:
+        if self.tree.topLevelItemCount() == 0:
             return
-        selected_sequences = self.getSequencesDF(True)
-        self.total_sequences = selected_sequences['repeat'].sum()
+        selected = self.getSequences(selected_only=True)
+        self.total_sequences = sum(s.get('repeat', 1) for s in selected)
 
-        if selected_sequences.empty:
+        if not selected:
             QMessageBox.warning(self, "No Sequences Selected", "Please select at least one sequence to run.")
             return
 
@@ -331,7 +436,7 @@ class SequencesWidget(QWidget):
         self.abortButton.setEnabled(True)
         self.sequence_running.emit(True)
 
-        self.worker = ExperimentWorker(self.experiment_ops, selected_sequences, self.config, callbacks)
+        self.worker = ExperimentWorker(self.experiment_ops, selected, self.config, callbacks)
         self.worker_thread = threading.Thread(target=self.worker.run, daemon=True)
 
         self.sequenceLabel.setText(f"0/{self.total_sequences} sequences")
@@ -351,7 +456,7 @@ class SequencesWidget(QWidget):
         self.timeLabel.setText(f"{hours:02d}:{minutes:02d}:{seconds:02d} remaining")
             
         # Update progress bar percentage
-        progress = min(100, int((self.elapsed_time / self.total_time) * 100))
+        progress = min(100, int((self.elapsed_time / max(self.total_time, 1)) * 100))
         self.progressBar.setValue(progress)
             
         if remaining <= 0:
@@ -465,7 +570,7 @@ class ManualControlWidget(QWidget):
         valveGroupBox.setLayout(valveLayout)
         mainLayout.addWidget(valveGroupBox)
 
-        if self.config['application'] == "Open Chamber":
+        if self.config.application == "Open Chamber":
             pumpGroupBox = QGroupBox("Disc Pump Control")
             pumpLayout = QHBoxLayout()
             pumpLayout.setContentsMargins(5, 5, 5, 5)
@@ -491,21 +596,21 @@ class ManualControlWidget(QWidget):
         leftWidget = QWidget()
         leftLayout = QGridLayout(leftWidget)
         self.syringePortCombo = QComboBox()
-        self.syringePortCombo.addItems(map(str, self.config['syringe_pump']['ports_allowed']))
+        self.syringePortCombo.addItems(map(str, self.config.syringe_pump.ports_allowed))
         leftLayout.addWidget(QLabel("Port:"), 0, 0)
         leftLayout.addWidget(self.syringePortCombo, 0, 1)
 
         self.speedCombo = QComboBox()
-        speed_code_limit = self.config['syringe_pump']['speed_code_limit']
+        speed_code_limit = self.config.syringe_pump.speed_code_limit
         for code in range(speed_code_limit, len(self.syringePump.SPEED_SEC_MAPPING)):
             rate = self.syringePump.get_flow_rate(code)
             self.speedCombo.addItem(f"{rate} mL/min", code)
-        self.speedCombo.setCurrentIndex(40 - self.config['syringe_pump']['speed_code_limit'])  # Set default to code 40
+        self.speedCombo.setCurrentIndex(40 - self.config.syringe_pump.speed_code_limit)  # Set default to code 40
         leftLayout.addWidget(QLabel("Speed:"), 1, 0)
         leftLayout.addWidget(self.speedCombo, 1, 1)
 
         self.volumeSpinBox = QSpinBox()
-        self.volumeSpinBox.setRange(1, self.config['syringe_pump']['volume_ul'])
+        self.volumeSpinBox.setRange(1, self.config.syringe_pump.volume_ul)
         self.volumeSpinBox.setSuffix(" μL")
         leftLayout.addWidget(QLabel("Volume:"), 2, 0)
         leftLayout.addWidget(self.volumeSpinBox, 2, 1)
@@ -531,7 +636,7 @@ class ManualControlWidget(QWidget):
         self.plungerPositionLabel = QLabel("Plunger Position (μL)")
         rightLayout.addWidget(self.plungerPositionLabel, alignment=Qt.AlignHCenter)
         self.plungerPositionBar = QProgressBar()
-        self.plungerPositionBar.setRange(0, self.config['syringe_pump']['volume_ul'])
+        self.plungerPositionBar.setRange(0, self.config.syringe_pump.volume_ul)
         self.plungerPositionBar.setOrientation(Qt.Vertical)
         self.plungerPositionBar.setTextVisible(False)
         rightLayout.addWidget(self.plungerPositionBar, alignment=Qt.AlignHCenter)
@@ -659,7 +764,7 @@ class ManualControlWidget(QWidget):
 
     def updatePlungerPosition(self):
         try:
-            position = self.syringePump.get_plunger_position() * self.config['syringe_pump']['volume_ul']
+            position = self.syringePump.get_plunger_position() * self.config.syringe_pump.volume_ul
             self.plungerPositionBar.setValue(int(position))
         except Exception:
             pass
@@ -677,7 +782,7 @@ class ManualControlWidget(QWidget):
 
     def closeEvent(self, event):
         self.progress_timer.stop()
-        self.position_timer.stop()
+        self.plunger_timer.stop()
         super().closeEvent(event)
 
 
@@ -994,14 +1099,14 @@ class TemperatureControlWidget(QWidget):
 class FluidicsControlGUI(QMainWindow):
     def __init__(self, is_simulation):
         super().__init__()
-        self.config = load_config()
+        self.config = load_config_file()
         self.simulation = is_simulation
         self.temperatureController = None
 
         self.initialize_hardware(self.simulation, self.config)
         self.selectorValveSystem = SelectorValveSystem(self.controller, self.config)
 
-        if self.config['application'] == "Open Chamber":
+        if self.config.application == "Open Chamber":
             self.discPump = DiscPump(self.controller)
         else:
             self.discPump = None
@@ -1031,24 +1136,24 @@ class FluidicsControlGUI(QMainWindow):
 
     def initialize_hardware(self, simulation, config):
         if simulation:
-            self.controller = FluidControllerSimulation(config['microcontroller']['serial_number'])
+            self.controller = FluidControllerSimulation(config.microcontroller.serial_number)
             self.syringePump = SyringePumpSimulation(
-                                sn=config['syringe_pump']['serial_number'],
-                                syringe_ul=config['syringe_pump']['volume_ul'], 
-                                speed_code_limit=config['syringe_pump']['speed_code_limit'],
-                                waste_port=config['syringe_pump']['waste_port'])
-            if 'temperature_controller' in config and config['temperature_controller']['use_temperature_controller']:
+                                sn=config.syringe_pump.serial_number,
+                                syringe_ul=config.syringe_pump.volume_ul,
+                                speed_code_limit=config.syringe_pump.speed_code_limit,
+                                waste_port=config.syringe_pump.waste_port)
+            if config.temperature_controller is not None:
                 self.temperatureController = TCMControllerSimulation()
         else:
-            self.controller = FluidController(config['microcontroller']['serial_number'])
+            self.controller = FluidController(config.microcontroller.serial_number)
             self.syringePump = SyringePump(
-                                sn=config['syringe_pump']['serial_number'],
-                                syringe_ul=config['syringe_pump']['volume_ul'], 
-                                speed_code_limit=config['syringe_pump']['speed_code_limit'],
-                                waste_port=config['syringe_pump']['waste_port'])
-            if 'temperature_controller' in config and config['temperature_controller']['use_temperature_controller']:
+                                sn=config.syringe_pump.serial_number,
+                                syringe_ul=config.syringe_pump.volume_ul,
+                                speed_code_limit=config.syringe_pump.speed_code_limit,
+                                waste_port=config.syringe_pump.waste_port)
+            if config.temperature_controller is not None:
                 try:
-                    self.temperatureController = TCMController(config['temperature_controller']['serial_number'])
+                    self.temperatureController = TCMController(config.temperature_controller.serial_number)
                 except Exception as e:
                     print(f"Error initializing temperature controller: {e}")
                     self.temperatureController = None
@@ -1066,9 +1171,9 @@ class FluidicsControlGUI(QMainWindow):
             self.temperatureController.actual_temp_updating_thread.join()
             self.temperatureController.serial.close()
 
-        if self.config['application'] == "Open Chamber":
+        if self.config.application == "Open Chamber":
             self.syringePump.close()
-        elif self.config['application'] == "MERFISH":
+        elif self.config.application == "Flow Cell":
             self.syringePump.close(True)
         super().closeEvent(event)
 

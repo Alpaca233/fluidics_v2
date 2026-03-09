@@ -1,0 +1,30 @@
+sequences:
+  - type: priming
+    fluidic_port: 10
+    flow_rate: 5000
+    volume: 2000
+
+  - type: flow_reagent
+    fluidic_port: 10
+    flow_rate: 5000
+    volume: 500
+
+  - type: flow_reagent
+    fluidic_port: 2
+    flow_rate: 5000
+    volume: 2000
+    incubation_time: 3
+    fill_tubing_with: 25
+
+  - type: flow_reagent
+    fluidic_port: 10
+    flow_rate: 5000
+    volume: 2000
+    incubation_time: 1
+    fill_tubing_with: 25
+
+  - type: clean_up
+    fluidic_port: 10
+    flow_rate: 10000
+    volume: 2000
+    repeat: 3

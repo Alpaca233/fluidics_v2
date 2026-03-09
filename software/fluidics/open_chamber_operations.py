@@ -9,36 +9,57 @@ class OpenChamberOperations():
         self.dp = disc_pump
         self.tc = temperature_controller
 
-    def process_sequence(self, sequence):
-        # TODO: In open chamber sequences, use a 'time' or 'power' field for operating disc pump. Planning to do this after moving to YAML
-        print(sequence)
-        try:
-            sequence_name = sequence['sequence_name']
-            port = int(sequence['fluidic_port'])
-            flow_rate = int(sequence['flow_rate'])
-            volume = int(sequence['volume'])
-            incubation_time = int(sequence['incubation_time'])
-            fill_tubing_with = sequence['fill_tubing_with']
-        except:
-            raise ValueError("Invalid sequence")
+        # Cache frequently used config values
+        sp = self.config.syringe_pump
+        self.extract_port = sp.extract_port
+        self.dispense_port = sp.dispense_port
+        self.waste_port = sp.waste_port
+        self.speed_code_limit = sp.speed_code_limit
+        self.syringe_volume_ul = sp.volume_ul
+        self.tubing_sv_to_sp = self.config.reagent_selection.common_tubing_fluid_amount_ul
+        self.tubing_sp_to_oc = self.config.sample_selection_inlet.common_tubing_fluid_amount_ul
+        self.chamber_volume_ul = self.config.samples.chamber_volume_ul
 
-        if sequence_name.startswith("Add Reagent"):
-            self.add_reagent(port, flow_rate, volume, fill_tubing_with)
-        elif sequence_name.startswith("Clear Tubings and Add Reagent"):
-            self.clear_and_add_reagent(port, flow_rate, volume, fill_tubing_with)
-        elif sequence_name == "Wash with Constant Flow":
-            self.wash_with_constant_flow(port, flow_rate, volume, fill_tubing_with)
-        elif sequence_name == "Priming":
-            self.priming_or_clean_up(port, flow_rate, volume)
-        elif sequence_name == "Clean Up":
-            self.priming_or_clean_up(port, flow_rate, volume, clean_up=True)
-        elif sequence_name.startswith("Set Temperature"):
-            self.set_temperature(float(sequence_name.split()[-1]))
+    def process_sequence(self, sequence):
+        print(sequence)
+        seq_type = sequence['type']
+
+        if seq_type == "add_reagent":
+            self.add_reagent(
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'],
+                sequence.get('fill_tubing_with'))
+        elif seq_type == "clear_and_add_reagent":
+            self.clear_and_add_reagent(
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'],
+                sequence.get('fill_tubing_with'))
+        elif seq_type == "wash_constant_flow":
+            self.wash_with_constant_flow(
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'],
+                sequence.get('fill_tubing_with'))
+        elif seq_type == "priming":
+            self.priming_or_clean_up(
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'])
+        elif seq_type == "clean_up":
+            self.priming_or_clean_up(
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'],
+                clean_up=True)
+        elif seq_type == "set_temperature":
+            self.set_temperature(sequence['temperature'])
         else:
-            raise ValueError(f"Unknown sequence name: {sequence_name}")
+            raise ValueError(f"Unknown sequence type: {seq_type}")
 
     def _empty_syringe_pump_on_full(self, volume):
-        if self.sp.get_current_volume() + self.sp.get_chained_volume() + volume > 0.95 * self.config['syringe_pump']['volume_ul']:
+        if self.sp.get_current_volume() + self.sp.get_chained_volume() + volume > 0.95 * self.syringe_volume_ul:
             try:
                 self.sp.dispense_to_waste()
                 self.sp.execute()
@@ -51,10 +72,10 @@ class OpenChamberOperations():
         then add reagent from {port}
         """
         speed_code = self.sp.flow_rate_to_speed_code(flow_rate)
-        volume = min(self.config['chamber_volume_ul'], volume)
+        volume = min(self.chamber_volume_ul, volume)
         try:
             self.sp.reset_chain()
-            self.sp.dispense_to_waste(self.config['syringe_pump']['speed_code_limit'])
+            self.sp.dispense_to_waste(self.speed_code_limit)
             if self.sp.is_aborted:
                 return
             self.sp.execute()
@@ -62,10 +83,10 @@ class OpenChamberOperations():
                 return
             self.sv.open_port(port)
             # Clear previous buffer in tubings (selector valve to syringe pump)
-            self.sp.extract(self.config['syringe_pump']['extract_port'], self.config['tubing_fluid_amount_sv_to_sp_ul'], self.config['syringe_pump']['speed_code_limit'])
-            self.sp.dispense_to_waste(self.config['syringe_pump']['speed_code_limit'])
-            # Assume reagent volume is greater than 'tubing_fluid_amount_sv_to_sp_ul'
-            self.sp.extract(self.config['syringe_pump']['extract_port'], volume - self.config['tubing_fluid_amount_sv_to_sp_ul'], self.config['syringe_pump']['speed_code_limit'])
+            self.sp.extract(self.extract_port, self.tubing_sv_to_sp, self.speed_code_limit)
+            self.sp.dispense_to_waste(self.speed_code_limit)
+            # Assume reagent volume is greater than 'tubing_sv_to_sp'
+            self.sp.extract(self.extract_port, volume - self.tubing_sv_to_sp, self.speed_code_limit)
             if self.sp.is_aborted:
                 return
             self.sp.execute()
@@ -74,7 +95,7 @@ class OpenChamberOperations():
             if fill_tubing_with_port:
                 self.sv.open_port(int(fill_tubing_with_port))
             # Draw all reagent into syringe
-            self.sp.extract(self.config['syringe_pump']['extract_port'], self.config['tubing_fluid_amount_sv_to_sp_ul'], self.config['syringe_pump']['speed_code_limit'])
+            self.sp.extract(self.extract_port, self.tubing_sv_to_sp, self.speed_code_limit)
             if self.sp.is_aborted:
                 return
             self.sp.execute()
@@ -82,8 +103,8 @@ class OpenChamberOperations():
                 return
             self.dp.aspirate(10)
             # Clear previous buffer in tubings (syringe pump to chamber)
-            # Assume reagent volume is greater than 'tubing_fluid_amount_sp_to_oc_ul'
-            self.sp.dispense(self.config['syringe_pump']['dispense_port'], self.config['tubing_fluid_amount_sp_to_oc_ul'], speed_code)
+            # Assume reagent volume is greater than 'tubing_sp_to_oc'
+            self.sp.dispense(self.dispense_port, self.tubing_sp_to_oc, speed_code)
             if self.sp.is_aborted:
                 return
             self.sp.execute()
@@ -91,9 +112,9 @@ class OpenChamberOperations():
                 return
             self.dp.aspirate(10)
             # Push reagent to open chamber
-            self.sp.dispense(self.config['syringe_pump']['dispense_port'], volume - self.config['tubing_fluid_amount_sp_to_oc_ul'], speed_code)
-            self.sp.extract(self.config['syringe_pump']['extract_port'], self.config['tubing_fluid_amount_sp_to_oc_ul'], self.config['syringe_pump']['speed_code_limit'])
-            self.sp.dispense(self.config['syringe_pump']['dispense_port'], self.config['tubing_fluid_amount_sp_to_oc_ul'], speed_code)
+            self.sp.dispense(self.dispense_port, volume - self.tubing_sp_to_oc, speed_code)
+            self.sp.extract(self.extract_port, self.tubing_sp_to_oc, self.speed_code_limit)
+            self.sp.dispense(self.dispense_port, self.tubing_sp_to_oc, speed_code)
             if self.sp.is_aborted:
                 return
             self.sp.execute()
@@ -105,10 +126,10 @@ class OpenChamberOperations():
         Add the reagent from {port} to the chamber, assuming tubings already contain the same reagent.
         """
         speed_code = self.sp.flow_rate_to_speed_code(flow_rate)
-        volume = min(self.config['chamber_volume_ul'], volume)
+        volume = min(self.chamber_volume_ul, volume)
         try:
             self.sp.reset_chain()
-            self.sp.dispense_to_waste(self.config['syringe_pump']['speed_code_limit'])
+            self.sp.dispense_to_waste(self.speed_code_limit)
             if self.sp.is_aborted:
                 return
             self.sp.execute()
@@ -120,8 +141,8 @@ class OpenChamberOperations():
             syringe_vol = 0
             if fill_tubing_with_port:
                 self.sv.open_port(port)
-                syringe_vol += max(volume - self.config['tubing_fluid_amount_sp_to_oc_ul'] - self.config['tubing_fluid_amount_sv_to_sp_ul'], 0)
-                self.sp.extract(self.config['syringe_pump']['extract_port'], syringe_vol, self.config['syringe_pump']['speed_code_limit'])
+                syringe_vol += max(volume - self.tubing_sp_to_oc - self.tubing_sv_to_sp, 0)
+                self.sp.extract(self.extract_port, syringe_vol, self.speed_code_limit)
                 if self.sp.is_aborted:
                     return
                 self.sp.execute()
@@ -129,13 +150,13 @@ class OpenChamberOperations():
                     return
                 self.sv.open_port(int(fill_tubing_with_port))
                 # Draw sv_to_sp into syringe
-                syringe_vol += self.config['tubing_fluid_amount_sv_to_sp_ul']
-                self.sp.extract(self.config['syringe_pump']['extract_port'], self.config['tubing_fluid_amount_sv_to_sp_ul'], self.config['syringe_pump']['speed_code_limit'])
+                syringe_vol += self.tubing_sv_to_sp
+                self.sp.extract(self.extract_port, self.tubing_sv_to_sp, self.speed_code_limit)
                 # Discard overflow amount (in the case chamber_volume < sp_to_oc + sv_to_sp)
-                overflow = max(self.config['tubing_fluid_amount_sp_to_oc_ul'] + self.config['tubing_fluid_amount_sv_to_sp_ul'] - volume, 0)
+                overflow = max(self.tubing_sp_to_oc + self.tubing_sv_to_sp - volume, 0)
                 syringe_vol -= overflow
                 if overflow > 0:
-                    self.sp.dispense(self.config['syringe_pump']['waste_port'], overflow, speed_code)
+                    self.sp.dispense(self.waste_port, overflow, speed_code)
                     if self.sp.is_aborted:
                         return
                     self.sp.execute()
@@ -144,17 +165,17 @@ class OpenChamberOperations():
             else:
                 self.sv.open_port(port)
                 # Draw the amount needed into syringe (volume - sp_to_oc)
-                syringe_vol = volume - self.config['tubing_fluid_amount_sp_to_oc_ul']
-                self.sp.extract(self.config['syringe_pump']['extract_port'], syringe_vol, self.config['syringe_pump']['speed_code_limit'])
+                syringe_vol = volume - self.tubing_sp_to_oc
+                self.sp.extract(self.extract_port, syringe_vol, self.speed_code_limit)
                 if self.sp.is_aborted:
                     return
                 self.sp.execute()
                 if self.sp.is_aborted:
                     return
             # Push reagent to sample
-            self.sp.dispense(self.config['syringe_pump']['dispense_port'], syringe_vol, speed_code)
-            self.sp.extract(self.config['syringe_pump']['extract_port'], self.config['tubing_fluid_amount_sp_to_oc_ul'], self.config['syringe_pump']['speed_code_limit'])
-            self.sp.dispense(self.config['syringe_pump']['dispense_port'], self.config['tubing_fluid_amount_sp_to_oc_ul'], speed_code)
+            self.sp.dispense(self.dispense_port, syringe_vol, speed_code)
+            self.sp.extract(self.extract_port, self.tubing_sp_to_oc, self.speed_code_limit)
+            self.sp.dispense(self.dispense_port, self.tubing_sp_to_oc, speed_code)
             # Clear previous liquid in open chamber
             if self.sp.is_aborted:
                 return
@@ -168,10 +189,10 @@ class OpenChamberOperations():
         Add reagent from {port} while draining with disc pump on the othe side to keep a constant flow in the chamber.
         """
         speed_code = self.sp.flow_rate_to_speed_code(flow_rate)
-        volume = min(self.config['syringe_pump']['volume_ul'], volume)
+        volume = min(self.syringe_volume_ul, volume)
         try:
             self.sp.reset_chain()
-            self.sp.dispense_to_waste(self.config['syringe_pump']['speed_code_limit'])
+            self.sp.dispense_to_waste(self.speed_code_limit)
             if self.sp.is_aborted:
                 return
             self.sp.execute()
@@ -179,7 +200,7 @@ class OpenChamberOperations():
                 return
             self.sv.open_port(port)
             # No need to clear previous liquid in tubings (sv_to_sp)
-            self.sp.extract(self.config['syringe_pump']['extract_port'], volume - self.config['tubing_fluid_amount_sv_to_sp_ul'], self.config['syringe_pump']['speed_code_limit'])
+            self.sp.extract(self.extract_port, volume - self.tubing_sv_to_sp, self.speed_code_limit)
             if self.sp.is_aborted:
                 return
             self.sp.execute()
@@ -187,8 +208,8 @@ class OpenChamberOperations():
                 return
             if fill_tubing_with_port:
                 self.sv.open_port(fill_tubing_with_port)
-            self.sp.extract(self.config['syringe_pump']['extract_port'], self.config['tubing_fluid_amount_sv_to_sp_ul'], self.config['syringe_pump']['speed_code_limit'])
-            self.sp.dispense(self.config['syringe_pump']['dispense_port'], volume, speed_code)
+            self.sp.extract(self.extract_port, self.tubing_sv_to_sp, self.speed_code_limit)
+            self.sp.dispense(self.dispense_port, volume, speed_code)
             # Push reagent to open chamber
             if self.sp.is_aborted:
                 return
@@ -197,8 +218,8 @@ class OpenChamberOperations():
             self.dp.stop()
             if fill_tubing_with_port:
                 # Wash with additional amount of buffer in tubing sp_to_oc and fill with next reagent
-                self.sp.extract(self.config['syringe_pump']['extract_port'], self.config['tubing_fluid_amount_sp_to_oc_ul'], self.config['syringe_pump']['speed_code_limit'])
-                self.sp.dispense(self.config['syringe_pump']['dispense_port'], self.config['tubing_fluid_amount_sp_to_oc_ul'], speed_code)
+                self.sp.extract(self.extract_port, self.tubing_sp_to_oc, self.speed_code_limit)
+                self.sp.dispense(self.dispense_port, self.tubing_sp_to_oc, speed_code)
                 if self.sp.is_aborted:
                     return
                 self.dp.start(0.3)
@@ -210,7 +231,7 @@ class OpenChamberOperations():
 
     def priming_or_clean_up(self, port, flow_rate, volume, use_ports=None, clean_up=False):
         """
-        Fill the tubings from reagents to selector valves with the corresponding reagents. Finally, fill the tubings before 
+        Fill the tubings from reagents to selector valves with the corresponding reagents. Finally, fill the tubings before
         syringe pump with {volume} of the reagent from {port}.
         This method should work for both priming and cleaning. For priming, use a wash buffer for {port}; for cleaning, use water
         for all ports.
@@ -232,7 +253,7 @@ class OpenChamberOperations():
                 volume_to_port = self.sv.get_tubing_fluid_amount_to_port(i)
                 if volume_to_port:
                     self.sv.open_port(i)
-                    self.sp.extract(self.config['syringe_pump']['extract_port'], volume_to_port, priming_speed_code_limit)
+                    self.sp.extract(self.extract_port, volume_to_port, priming_speed_code_limit)
                     self.sp.dispense_to_waste()
                     if self.sp.is_aborted:
                         return
@@ -241,8 +262,8 @@ class OpenChamberOperations():
                         return
 
             self.sv.open_port(port)
-            self.sp.extract(self.config['syringe_pump']['extract_port'], volume, priming_speed_code_limit)
-            self.sp.dispense(self.config['syringe_pump']['dispense_port'], volume, speed_code)
+            self.sp.extract(self.extract_port, volume, priming_speed_code_limit)
+            self.sp.dispense(self.dispense_port, volume, speed_code)
             if self.sp.is_aborted:
                 return
             self.sp.execute()

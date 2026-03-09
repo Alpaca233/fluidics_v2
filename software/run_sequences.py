@@ -1,10 +1,8 @@
 import argparse
 import sys
-import json
-import time
 import threading
-import pandas as pd
-
+from fluidics.sequences import load_sequences, get_included_sequences
+from fluidics.control.config import load_config
 from fluidics.control.controller import FluidControllerSimulation, FluidController
 from fluidics.control.syringe_pump import SyringePumpSimulation, SyringePump
 from fluidics.control.selector_valve import SelectorValveSystem
@@ -18,15 +16,15 @@ from fluidics.control._def import CMD_SET
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Run sequences from a CSV file'
+        description='Run sequences from a YAML or CSV file'
     )
     parser.add_argument(
         '--path', required=True,
-        help='Path to the CSV file containing sequences'
+        help='Path to the sequence file (YAML or CSV)'
     )
     parser.add_argument(
-        '--config', default='config.json',
-        help='Path to configuration file'
+        '--config', default='config.yaml',
+        help='Path to configuration file (YAML or JSON)'
     )
     parser.add_argument(
         '--simulation',
@@ -36,34 +34,32 @@ def parse_args():
     )
     return parser.parse_args()
 
-def load_config(config_path='./config.json'):
-    with open(config_path, 'r') as f:
-        return json.load(f)
-
 def initialize_hardware(simulation, config):
+    temperatureController = None
+
     if simulation:
-        controller = FluidControllerSimulation(config['microcontroller']['serial_number'])
+        controller = FluidControllerSimulation(config.microcontroller.serial_number)
         syringePump = SyringePumpSimulation(
-            sn=config['syringe_pump']['serial_number'],
-            syringe_ul=config['syringe_pump']['volume_ul'], 
-            speed_code_limit=config['syringe_pump']['speed_code_limit'],
-            waste_port=3)
-        if 'temperature_controller' in config and config['use_temperature_controller']:
-                temperatureController = TCMControllerSimulation()
+            sn=config.syringe_pump.serial_number,
+            syringe_ul=config.syringe_pump.volume_ul,
+            speed_code_limit=config.syringe_pump.speed_code_limit,
+            waste_port=config.syringe_pump.waste_port)
+        if config.temperature_controller is not None:
+            temperatureController = TCMControllerSimulation()
     else:
-        controller = FluidController(config['microcontroller']['serial_number'])
+        controller = FluidController(config.microcontroller.serial_number)
         syringePump = SyringePump(
-            sn=config['syringe_pump']['serial_number'],
-            syringe_ul=config['syringe_pump']['volume_ul'], 
-            speed_code_limit=config['syringe_pump']['speed_code_limit'],
-            waste_port=3)
-        if 'temperature_controller' in config and config['temperature_controller']['use_temperature_controller']:
-                temperatureController = TCMController(config['temperature_controller']['serial_number'])
+            sn=config.syringe_pump.serial_number,
+            syringe_ul=config.syringe_pump.volume_ul,
+            speed_code_limit=config.syringe_pump.speed_code_limit,
+            waste_port=config.syringe_pump.waste_port)
+        if config.temperature_controller is not None:
+            temperatureController = TCMController(config.temperature_controller.serial_number)
 
     controller.begin()
     controller.send_command(CMD_SET.CLEAR)
 
-    return controller, syringePump
+    return controller, syringePump, temperatureController
 
 def update_progress(index, sequence_num, status):
     print(f"Sequence {index} ({sequence_num}): {status}")
@@ -80,24 +76,29 @@ def on_estimate(time_to_finish, n_sequences):
 def main():
     args = parse_args()
 
+    syringePump = None
+    thread = None
+
     try:
         # Load sequences
-        df = pd.read_csv(args.path)
-        df = df[df['include'] == 1]
+        sequences = load_sequences(args.path)
+        included = get_included_sequences(sequences)
         # Load config
         config = load_config(args.config)
 
-        controller, syringePump = initialize_hardware(args.simulation, config)
+        controller, syringePump, temperatureController = initialize_hardware(args.simulation, config)
 
         selectorValveSystem = SelectorValveSystem(controller, config)
-        if config['application'] == "Open Chamber":
+        if config.application == "Open Chamber":
             discPump = DiscPump(controller)
 
         # Run experiment
-        if config['application'] == "MERFISH":
+        if config.application == "Flow Cell":
             experiment_ops = MERFISHOperations(config, syringePump, selectorValveSystem)
-        elif config['application'] == "Open Chamber":
-            experiment_ops = OpenChamberOperations(config, syringePump, selectorValveSystem, discPump)
+        elif config.application == "Open Chamber":
+            experiment_ops = OpenChamberOperations(config, syringePump, selectorValveSystem, discPump, temperatureController)
+        else:
+            raise ValueError(f"Unsupported application: {config.application!r}")
 
         callbacks = {
             'update_progress': update_progress,
@@ -106,7 +107,7 @@ def main():
             'on_estimate': on_estimate
         }
 
-        worker = ExperimentWorker(experiment_ops, df, config, callbacks)
+        worker = ExperimentWorker(experiment_ops, included, config, callbacks)
         thread = threading.Thread(target=worker.run)
         thread.start()
 
@@ -114,12 +115,13 @@ def main():
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
-        if thread:
+        if thread is not None:
             thread.join()
         sys.exit(1)
     finally:
-        syringePump.reset_abort()
-        syringePump.close()
+        if syringePump is not None:
+            syringePump.reset_abort()
+            syringePump.close()
 
 if __name__ == '__main__':
     main()
