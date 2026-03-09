@@ -60,8 +60,10 @@ Open chamber configs additionally require:
 **3. Launch the GUI:**
 
 ```bash
-python gui.py --config path/to/config.yaml
+python gui.py
 ```
+
+The GUI looks for `config.yaml` (or `config.json`) in the current directory.
 
 Or run sequences from the command line:
 

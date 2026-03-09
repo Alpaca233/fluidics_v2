@@ -42,7 +42,7 @@ class SelectorValveSystem():
         self.available_port_number = 0
         for i, valve_id in enumerate(sv_config.valve_ids):
             ports = sv_config.number_of_ports[valve_id]
-            self.valves[i] = SelectorValve(self.fc, self.config, i, 1)
+            self.valves[i] = SelectorValve(self.fc, self.config, valve_id, 1)
             self.available_port_number += (ports - 1)
         self.available_port_number += 1
         self.current_port = 1

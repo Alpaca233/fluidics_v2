@@ -173,6 +173,8 @@ class SequencesWidget(QWidget):
             self.experiment_ops = MERFISHOperations(self.config, self.syringePump, self.selectorValveSystem)
         elif self.config.application == "Open Chamber":
             self.experiment_ops = OpenChamberOperations(self.config, self.syringePump, self.selectorValveSystem, self.discPump, self.temperatureController)
+        else:
+            raise ValueError(f"Unsupported application: {self.config.application!r}")
 
         self.initUI()
 

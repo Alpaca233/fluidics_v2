@@ -97,6 +97,8 @@ def main():
             experiment_ops = MERFISHOperations(config, syringePump, selectorValveSystem)
         elif config.application == "Open Chamber":
             experiment_ops = OpenChamberOperations(config, syringePump, selectorValveSystem, discPump, temperatureController)
+        else:
+            raise ValueError(f"Unsupported application: {config.application!r}")
 
         callbacks = {
             'update_progress': update_progress,

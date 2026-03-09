@@ -224,7 +224,7 @@ def save_sequences_yaml(sequences: list[dict], path: str) -> None:
         reordered.append(ordered)
 
     with open(path, "w") as f:
-        yaml.dump({"sequences": reordered}, f, default_flow_style=False, sort_keys=False)
+        yaml.safe_dump({"sequences": reordered}, f, default_flow_style=False, sort_keys=False)
 
 
 def get_included_sequences(sequences: list[dict]) -> list[dict]:
