@@ -122,6 +122,8 @@ class ModbusRTUClient:
             self._port = port
         if baudrate is not None:
             self._baudrate = baudrate
+        if self._port is None:
+            raise ModbusError("No serial port specified")
         self._serial = serial.Serial(
             self._port, baudrate=self._baudrate, timeout=self._timeout
         )
@@ -184,20 +186,9 @@ class ModbusRTUClient:
                     self._serial.reset_input_buffer()
                     self._serial.write(frame)
                     time.sleep(FRAME_INTERVAL)
-
                     response = self._serial.read(expected_response_len)
-                    if len(response) < expected_response_len:
-                        raise ModbusError(
-                            f"Incomplete response: expected {expected_response_len} "
-                            f"bytes, got {len(response)}",
-                            slave_id=frame[0],
-                        )
-
-                    if not _verify_crc(response):
-                        raise ModbusError("CRC verification failed", slave_id=frame[0])
-
-                except ModbusError as e:
-                    last_error = e
+                except (serial.SerialException, OSError) as e:
+                    last_error = ModbusError(str(e), slave_id=frame[0])
                     logger.warning(
                         f"Modbus request failed (attempt {attempt + 1}/"
                         f"{self._retries + 1}): {e}"
@@ -206,14 +197,38 @@ class ModbusRTUClient:
                         time.sleep(FRAME_INTERVAL * 2)
                     continue
 
-                # Exception responses are application-level errors — don't retry
-                if response[1] & 0x80:
+                # Exception responses are 5 bytes — check before incomplete check
+                if len(response) >= 5 and (response[1] & 0x80) and _verify_crc(response[:5]):
                     exception_code = response[2]
                     raise ModbusError(
                         f"Modbus exception response: FC=0x{response[1]:02X}, "
                         f"code=0x{exception_code:02X}",
                         slave_id=response[0],
                     )
+
+                if len(response) < expected_response_len:
+                    last_error = ModbusError(
+                        f"Incomplete response: expected {expected_response_len} "
+                        f"bytes, got {len(response)}",
+                        slave_id=frame[0],
+                    )
+                    logger.warning(
+                        f"Modbus request failed (attempt {attempt + 1}/"
+                        f"{self._retries + 1}): {last_error}"
+                    )
+                    if attempt < self._retries:
+                        time.sleep(FRAME_INTERVAL * 2)
+                    continue
+
+                if not _verify_crc(response):
+                    last_error = ModbusError("CRC verification failed", slave_id=frame[0])
+                    logger.warning(
+                        f"Modbus request failed (attempt {attempt + 1}/"
+                        f"{self._retries + 1}): {last_error}"
+                    )
+                    if attempt < self._retries:
+                        time.sleep(FRAME_INTERVAL * 2)
+                    continue
 
                 return response
 

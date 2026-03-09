@@ -2,7 +2,6 @@ import logging
 import time
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Optional
 
 from .modbus_rtu import ModbusRTUClient
 
