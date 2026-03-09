@@ -144,9 +144,10 @@ def load_sequences(path: str) -> list[dict]:
 def _load_yaml(path: str) -> list[dict]:
     """Load sequences from a YAML file, validate, and return as dicts."""
     with open(path, "r") as f:
-        raw = yaml.safe_load(f)
-    if raw is None:
+        data = yaml.safe_load(f)
+    if data is None:
         return []
+    raw = data.get("sequences", data) if isinstance(data, dict) else data
     validated = SequenceListAdapter.validate_python(raw)
     return [seq.model_dump() for seq in validated]
 

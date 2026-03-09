@@ -1,0 +1,63 @@
+sequences:
+  - type: priming
+    fluidic_port: 10
+    flow_rate: 1000
+    volume: 1000
+
+  - type: clear_and_add_reagent
+    fluidic_port: 3
+    flow_rate: 1000
+    volume: 1000
+    incubation_time: 1
+
+  - type: add_reagent
+    fluidic_port: 3
+    flow_rate: 1000
+    volume: 1000
+    incubation_time: 1
+    fill_tubing_with: 5
+
+  - type: add_reagent
+    fluidic_port: 5
+    flow_rate: 1000
+    volume: 1000
+    incubation_time: 1
+    repeat: 2
+
+  - type: set_temperature
+    temperature: 50
+    include: false
+
+  - type: add_reagent
+    fluidic_port: 5
+    flow_rate: 1000
+    volume: 1000
+    incubation_time: 1
+    fill_tubing_with: 3
+
+  - type: set_temperature
+    temperature: 25
+    include: false
+
+  - type: add_reagent
+    fluidic_port: 3
+    flow_rate: 1000
+    volume: 1000
+    incubation_time: 2
+    fill_tubing_with: 6
+
+  - type: wash_constant_flow
+    fluidic_port: 6
+    flow_rate: 1000
+    volume: 1000
+
+  - type: wash_constant_flow
+    fluidic_port: 6
+    flow_rate: 1000
+    volume: 1000
+    fill_tubing_with: 5
+
+  - type: clean_up
+    fluidic_port: 10
+    flow_rate: 1000
+    volume: 1000
