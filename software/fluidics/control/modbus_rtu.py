@@ -196,17 +196,6 @@ class ModbusRTUClient:
                     if not _verify_crc(response):
                         raise ModbusError("CRC verification failed", slave_id=frame[0])
 
-                    # Check for exception response
-                    if response[1] & 0x80:
-                        exception_code = response[2]
-                        raise ModbusError(
-                            f"Modbus exception response: FC=0x{response[1]:02X}, "
-                            f"code=0x{exception_code:02X}",
-                            slave_id=response[0],
-                        )
-
-                    return response
-
                 except ModbusError as e:
                     last_error = e
                     logger.warning(
@@ -216,6 +205,17 @@ class ModbusRTUClient:
                     if attempt < self._retries:
                         time.sleep(FRAME_INTERVAL * 2)
                     continue
+
+                # Exception responses are application-level errors — don't retry
+                if response[1] & 0x80:
+                    exception_code = response[2]
+                    raise ModbusError(
+                        f"Modbus exception response: FC=0x{response[1]:02X}, "
+                        f"code=0x{exception_code:02X}",
+                        slave_id=response[0],
+                    )
+
+                return response
 
             raise last_error
 

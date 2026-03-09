@@ -373,6 +373,8 @@ class ServoMotor:
     def _wait_for_state(self, slave_id: int, target: DriveState, timeout: float):
         start = time.time()
         while time.time() - start < timeout:
+            if self.is_aborted:
+                raise RuntimeError("Operation aborted")
             state = self._get_state(slave_id)
             if state == target:
                 return
@@ -388,6 +390,8 @@ class ServoMotor:
     def _wait_for_motion(self, slave_id: int, timeout: float):
         start = time.time()
         while time.time() - start < timeout:
+            if self.is_aborted:
+                raise RuntimeError("Operation aborted")
             status_word = self._read_status_word(slave_id)
             if status_word & StatusWordBits.FAULT:
                 error = self._client.read_register(slave_id, Reg.ERROR_CODE)
@@ -400,6 +404,8 @@ class ServoMotor:
     def _wait_for_homing(self, slave_id: int, timeout: float):
         start = time.time()
         while time.time() - start < timeout:
+            if self.is_aborted:
+                raise RuntimeError("Operation aborted")
             status_word = self._read_status_word(slave_id)
             if status_word & StatusWordBits.FAULT:
                 error = self._client.read_register(slave_id, Reg.ERROR_CODE)
@@ -541,6 +547,15 @@ class ServoMotor:
     ):
         name, config, sid = self._resolve_axis(axis)
 
+        current_pulses = self._client.read_register_32bit(sid, Reg.POSITION_ACTUAL_VALUE, signed=True)
+        current_mm = config.pulses_to_mm(current_pulses)
+        target_mm = current_mm + distance_mm
+        if not config.is_position_valid(target_mm):
+            raise ValueError(
+                f"Target position {target_mm:.2f}mm out of range "
+                f"[{config.stroke_min}, {config.stroke_max}]"
+            )
+
         self._client.write_register(sid, Reg.MODES_OF_OPERATION, OperationMode.PROFILE_POSITION)
 
         if velocity_mm_s is not None:
@@ -572,19 +587,19 @@ class ServoMotor:
         self._client.write_register(sid, Reg.MODES_OF_OPERATION, OperationMode.PROFILE_POSITION)
         self._client.write_register_32bit(sid, Reg.PROFILE_VELOCITY, config.velocity_mm_to_pulses(abs(velocity_corrected)))
 
-        far_position = -10000000 if velocity_corrected > 0 else 10000000
+        far_position = 10000000 if velocity_corrected > 0 else -10000000
         self._client.write_register_32bit(sid, Reg.TARGET_POSITION, far_position, signed=True)
 
-        self._write_control_word(sid, 0x000F)
+        self._write_control_word(sid, ControlWordBits.CMD_ENABLE_OPERATION)
         time.sleep(0.001)
-        self._write_control_word(sid, 0x001F)
+        self._write_control_word(sid, ControlWordBits.CMD_ENABLE_OPERATION | ControlWordBits.NEW_SET_POINT)
 
     def stop(self, axis: str | None = None, wait: bool = True):
         _, config, sid = self._resolve_axis(axis)
 
         current_pos = self._client.read_register_32bit(sid, Reg.POSITION_ACTUAL_VALUE, signed=True)
         self._client.write_register_32bit(sid, Reg.TARGET_POSITION, current_pos, signed=True)
-        self._write_control_word(sid, 0x010F)
+        self._write_control_word(sid, ControlWordBits.CMD_ENABLE_OPERATION | ControlWordBits.HALT)
 
         if wait:
             start = time.time()
@@ -596,7 +611,7 @@ class ServoMotor:
 
             final_pos = self._client.read_register_32bit(sid, Reg.POSITION_ACTUAL_VALUE, signed=True)
             self._client.write_register_32bit(sid, Reg.TARGET_POSITION, final_pos, signed=True)
-            self._write_control_word(sid, 0x000F)
+            self._write_control_word(sid, ControlWordBits.CMD_ENABLE_OPERATION)
 
     def home(self, axis: str | None = None, wait: bool = True):
         name, config, sid = self._resolve_axis(axis)
@@ -621,7 +636,7 @@ class ServoMotor:
         time.sleep(0.01)
         self._write_control_word(sid, ControlWordBits.CMD_ENABLE_OPERATION)
         time.sleep(0.01)
-        self._write_control_word(sid, 0x001F)
+        self._write_control_word(sid, ControlWordBits.CMD_ENABLE_OPERATION | ControlWordBits.NEW_SET_POINT)
 
         if wait:
             self._wait_for_homing(sid, MOTION_TIMEOUT)
@@ -661,6 +676,12 @@ class ServoMotor:
 
     def abort(self):
         self.is_aborted = True
+        if self.is_connected:
+            for name in self._axis_configs:
+                try:
+                    self.quick_stop(name)
+                except Exception:
+                    pass
 
     def reset_abort(self):
         self.is_aborted = False
