@@ -185,6 +185,8 @@ class SequencesWidget(QWidget):
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Property", "Value"])
         self.tree.setColumnCount(2)
+        self.tree.setEditTriggers(QTreeWidget.NoEditTriggers)
+        self.tree.itemDoubleClicked.connect(self._onItemDoubleClicked)
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         layout.addWidget(self.tree)
@@ -243,14 +245,23 @@ class SequencesWidget(QWidget):
         self.elapsed_time = 0
         self.total_time = None
 
-    def _make_top_level_label(self, seq):
-        """Build the display label for a top-level tree item."""
-        seq_type = seq.get('type', '')
-        label = SEQUENCE_TYPE_LABELS.get(seq_type, seq_type)
-        name = seq.get('name')
-        if name:
-            label = f"{label} \u2014 {name}"
-        return label
+    FIELD_LABELS = {
+        'fluidic_port': 'Fluidic Port',
+        'flow_rate': 'Flow Rate (\u00b5L/min)',
+        'volume': 'Volume (\u00b5L)',
+        'fill_tubing_with': 'Fill Tubing With',
+        'incubation_time': 'Incubation Time (min)',
+        'repeat': 'Repeat',
+        'temperature': 'Temperature (\u00b0C)',
+    }
+
+    def _onItemDoubleClicked(self, item, column):
+        """Allow editing: name (col 0) for top-level items, value (col 1) for children."""
+        is_top_level = item.parent() is None
+        if is_top_level and column == 0:
+            self.tree.editItem(item, 0)
+        elif not is_top_level and column == 1:
+            self.tree.editItem(item, 1)
 
     def populateTree(self, sequences):
         """Populate the tree widget from a list of sequence dicts."""
@@ -261,10 +272,13 @@ class SequencesWidget(QWidget):
     def _addSequenceItem(self, seq):
         """Add a single sequence dict as a top-level tree item."""
         seq_type = seq.get('type', '')
-        label = self._make_top_level_label(seq)
+        type_label = SEQUENCE_TYPE_LABELS.get(seq_type, seq_type)
+        name = seq.get('name') or ''
 
-        item = QTreeWidgetItem([label, ''])
+        display_name = name if name else type_label
+        item = QTreeWidgetItem([display_name, f"Type: {type_label}"])
         item.setData(0, Qt.UserRole, seq_type)
+        item.setFlags(item.flags() | Qt.ItemIsEditable)
 
         # Include checkbox
         include = seq.get('include', True)
@@ -279,14 +293,14 @@ class SequencesWidget(QWidget):
         # Required fields (no default or default is a required sentinel)
         required_field_names = set()
         for fname, finfo in type_fields.items():
-            if fname in ('type', 'include'):
+            if fname in ('type', 'include', 'name'):
                 continue
             if finfo.is_required():
                 required_field_names.add(fname)
 
-        # Add child items for fields (excluding 'type' and 'include')
+        # Add child items for fields (excluding 'type', 'include', 'name')
         for fname, finfo in type_fields.items():
-            if fname in ('type', 'include'):
+            if fname in ('type', 'include', 'name'):
                 continue
             value = seq.get(fname)
             default = finfo.default
@@ -294,7 +308,9 @@ class SequencesWidget(QWidget):
             # Show field if it has a non-None, non-default value, or is required
             if fname in required_field_names or (value is not None and value != default):
                 display_value = str(value) if value is not None else ''
-                child = QTreeWidgetItem([fname, display_value])
+                display_label = self.FIELD_LABELS.get(fname, fname)
+                child = QTreeWidgetItem([display_label, display_value])
+                child.setData(0, Qt.UserRole, fname)
                 child.setFlags(child.flags() | Qt.ItemIsEditable)
                 item.addChild(child)
 
@@ -314,9 +330,15 @@ class SequencesWidget(QWidget):
 
             seq = {'type': seq_type, 'include': include}
 
+            # Read name from top-level item text (skip if it matches default type label)
+            name = item.text(0).strip()
+            type_label = SEQUENCE_TYPE_LABELS.get(seq_type, '')
+            if name and name != type_label:
+                seq['name'] = name
+
             for j in range(item.childCount()):
                 child = item.child(j)
-                fname = child.text(0)
+                fname = child.data(0, Qt.UserRole) or child.text(0)
                 raw_value = child.text(1).strip()
 
                 if not raw_value:
