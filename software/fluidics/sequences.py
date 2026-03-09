@@ -6,7 +6,6 @@ import re
 from typing import Annotated, Literal, Optional, Union, get_args
 
 import yaml
-import pandas as pd
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, TypeAdapter
 
 
@@ -111,13 +110,10 @@ APPLICATION_SEQUENCES: dict[str, list[str]] = {
     ],
 }
 
+# Derive CSV name-to-type mapping from labels (inverse, excluding set_temperature
+# which is handled via regex pattern matching in _load_csv).
 _CSV_NAME_TO_TYPE: dict[str, str] = {
-    "Flow Reagent": "flow_reagent",
-    "Add Reagent": "add_reagent",
-    "Clear Tubings and Add Reagent": "clear_and_add_reagent",
-    "Wash with Constant Flow": "wash_constant_flow",
-    "Priming": "priming",
-    "Clean Up": "clean_up",
+    v: k for k, v in SEQUENCE_TYPE_LABELS.items() if k != "set_temperature"
 }
 
 
@@ -151,6 +147,7 @@ def _load_yaml(path: str) -> list[dict]:
 
 def _load_csv(path: str) -> list[dict]:
     """Load sequences from a legacy CSV file, map to typed dicts, validate, and return."""
+    import pandas as pd
     df = pd.read_csv(path)
     sequences = []
     for _, row in df.iterrows():

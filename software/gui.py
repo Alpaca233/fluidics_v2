@@ -344,19 +344,8 @@ class SequencesWidget(QWidget):
                 if not raw_value:
                     continue
 
-                # Type conversion
-                if fname in ('fluidic_port', 'flow_rate', 'volume', 'repeat', 'fill_tubing_with'):
-                    try:
-                        seq[fname] = int(raw_value)
-                    except ValueError:
-                        seq[fname] = raw_value
-                elif fname in ('temperature', 'incubation_time'):
-                    try:
-                        seq[fname] = float(raw_value)
-                    except ValueError:
-                        seq[fname] = raw_value
-                else:
-                    seq[fname] = raw_value
+                # Store raw strings — pydantic will coerce types during validation
+                seq[fname] = raw_value
 
             sequences.append(seq)
         return sequences

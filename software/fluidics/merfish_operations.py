@@ -15,15 +15,15 @@ class MERFISHOperations():
 
         if seq_type == "flow_reagent":
             self.flow_reagent(
-                int(sequence['fluidic_port']),
-                int(sequence['flow_rate']),
-                int(sequence['volume']),
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'],
                 sequence.get('fill_tubing_with'))
         elif seq_type in ("priming", "clean_up"):
             self.priming_or_clean_up(
-                int(sequence['fluidic_port']),
-                int(sequence['flow_rate']),
-                int(sequence['volume']),
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'],
                 sequence.get('use_ports'))
         else:
             raise ValueError(f"Unknown sequence type: {seq_type}")

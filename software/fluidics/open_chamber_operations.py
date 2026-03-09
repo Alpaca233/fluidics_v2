@@ -26,35 +26,35 @@ class OpenChamberOperations():
 
         if seq_type == "add_reagent":
             self.add_reagent(
-                int(sequence['fluidic_port']),
-                int(sequence['flow_rate']),
-                int(sequence['volume']),
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'],
                 sequence.get('fill_tubing_with'))
         elif seq_type == "clear_and_add_reagent":
             self.clear_and_add_reagent(
-                int(sequence['fluidic_port']),
-                int(sequence['flow_rate']),
-                int(sequence['volume']),
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'],
                 sequence.get('fill_tubing_with'))
         elif seq_type == "wash_constant_flow":
             self.wash_with_constant_flow(
-                int(sequence['fluidic_port']),
-                int(sequence['flow_rate']),
-                int(sequence['volume']),
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'],
                 sequence.get('fill_tubing_with'))
         elif seq_type == "priming":
             self.priming_or_clean_up(
-                int(sequence['fluidic_port']),
-                int(sequence['flow_rate']),
-                int(sequence['volume']))
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'])
         elif seq_type == "clean_up":
             self.priming_or_clean_up(
-                int(sequence['fluidic_port']),
-                int(sequence['flow_rate']),
-                int(sequence['volume']),
+                sequence['fluidic_port'],
+                sequence['flow_rate'],
+                sequence['volume'],
                 clean_up=True)
         elif seq_type == "set_temperature":
-            self.set_temperature(float(sequence['temperature']))
+            self.set_temperature(sequence['temperature'])
         else:
             raise ValueError(f"Unknown sequence type: {seq_type}")
 
