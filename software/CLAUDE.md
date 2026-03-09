@@ -22,12 +22,18 @@ python convert_config.py path/to/legacy_config.json
 # Device discovery
 python list_controllers.py
 
+# Unit + integration tests (no hardware needed)
+python -m pytest                       # All tests
+python -m pytest tests/unit            # Unit tests only
+python -m pytest tests/integration     # Integration tests (simulation classes)
+python -m pytest -v                    # Verbose
+
 # Hardware test scripts (require connected hardware, run from software/)
-python tests/startup.py
-python tests/demo.py
+python tests/hardware/startup.py
+python tests/hardware/demo.py
 ```
 
-No standard test framework — tests are hardware-oriented scripts. Use `--simulation` for software-only testing.
+Uses pytest. Hardware tests in `tests/hardware/` are excluded from the default test run. Use `--simulation` for software-only CLI testing.
 
 **Dependencies:** PyQt5, pandas, matplotlib, pyserial, cobs, numpy, pydantic, pyyaml
 
@@ -111,4 +117,4 @@ Speed codes (0–40) map to stroke times via `SPEED_SEC_MAPPING`. Use `flow_rate
 - Config files in `sample_config/` (YAML), sequence files in `sample_sequences/` (YAML preferred, CSV supported for legacy)
 - The `abort` pattern: hardware classes expose `abort()` / `reset_abort()` and check `is_aborted` before operations
 - `send_command_blocking()` = `send_command()` + `wait_for_completion()` (polls MCU status until not `IN_PROGRESS`)
-- `tests/startup.py` imports from `control.` not `fluidics.control.` — must be run from `software/` directory
+- `tests/hardware/startup.py` imports from `control.` not `fluidics.control.` — must be run from `software/` directory

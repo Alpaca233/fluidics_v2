@@ -1,0 +1,33 @@
+{
+    "application": "Open Chamber",
+    "microcontroller": {"serial_number": "13995710"},
+    "syringe_pump": {
+        "serial_number": "CRCOb13BN11",
+        "volume_ul": 2500,
+        "ports_allowed": [1, 2, 3],
+        "waste_port": 1,
+        "extract_port": 2,
+        "dispense_port": 3,
+        "speed_code_limit": 10
+    },
+    "selector_valves": {
+        "valve_ids_allowed": [0],
+        "number_of_ports": {"0": 10},
+        "tubing_fluid_amount_to_valve_ul": {"0": 0},
+        "reagent_name_mapping": {
+            "port_1": "reagent x", "port_5": "buffer a", "port_6": "buffer b"
+        },
+        "tubing_fluid_amount_to_port_ul": {
+            "port_1": 300, "port_2": 300, "port_3": 300, "port_4": 300,
+            "port_5": 300, "port_6": 300, "port_7": 300, "port_8": 300,
+            "port_9": 300, "port_10": 300
+        }
+    },
+    "tubing_fluid_amount_sv_to_sp_ul": 300,
+    "tubing_fluid_amount_sp_to_oc_ul": 900,
+    "chamber_volume_ul": 1300,
+    "temperature_controller": {
+        "use_temperature_controller": false,
+        "serial_number": "FAKE_TC_SN"
+    }
+}
