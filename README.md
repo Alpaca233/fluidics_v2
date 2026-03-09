@@ -73,6 +73,20 @@ python run_sequences.py --path path/to/sequences.yaml --config path/to/config.ya
 
 Use `--simulation` to run without connected hardware. Legacy CSV sequence files and JSON config files are also supported.
 
+### Tests
+
+Requires pytest: `pip install pytest`
+
+```bash
+cd software
+python -m pytest                       # Run all unit + integration tests
+python -m pytest tests/unit            # Unit tests only (fast, no hardware)
+python -m pytest tests/integration     # Integration tests (uses simulation classes)
+python -m pytest -v                    # Verbose output
+```
+
+Hardware test scripts in `tests/hardware/` require connected devices and are excluded from the default test run.
+
 ## Experiment Sequences
 
 Experiments are defined as YAML files. Each sequence has a `type` field and only the fields relevant to that type. Example:

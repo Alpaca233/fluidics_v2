@@ -22,12 +22,18 @@ python convert_config.py path/to/legacy_config.json
 # Device discovery
 python list_controllers.py
 
+# Unit + integration tests (no hardware needed)
+python -m pytest                       # All tests
+python -m pytest tests/unit            # Unit tests only
+python -m pytest tests/integration     # Integration tests (simulation classes)
+python -m pytest -v                    # Verbose
+
 # Hardware test scripts (require connected hardware, run from software/)
-python tests/startup.py
-python tests/demo.py
+python tests/hardware/startup.py
+python tests/hardware/demo.py
 ```
 
-No standard test framework — tests are hardware-oriented scripts. Use `--simulation` for software-only testing.
+Uses pytest. Hardware tests in `tests/hardware/` are excluded from the default test run. Use `--simulation` for software-only CLI testing.
 
 **Dependencies:** PyQt5, pandas, matplotlib, pyserial, cobs, numpy, pydantic, pyyaml
 
