@@ -3,23 +3,25 @@ import pytest
 
 from fluidics.control.config import load_config
 from fluidics.control.controller import FluidControllerSimulation
-from fluidics.control.selector_valve import SelectorValve, SelectorValveSystem
+from fluidics.control.selector_valve import SelectorValveSystem
+
+
+def _make_valve_system(config_path):
+    config = load_config(str(config_path))
+    fc = FluidControllerSimulation(serial_number="test")
+    return SelectorValveSystem(fc, config)
 
 
 @pytest.fixture
 def flow_cell_system(fixtures_dir):
     """SelectorValveSystem with 3 valves (flow cell config)."""
-    config = load_config(str(fixtures_dir / "flow_cell_config.yaml"))
-    fc = FluidControllerSimulation(serial_number="test")
-    return SelectorValveSystem(fc, config)
+    return _make_valve_system(fixtures_dir / "flow_cell_config.yaml")
 
 
 @pytest.fixture
 def open_chamber_system(fixtures_dir):
     """SelectorValveSystem with 1 valve (open chamber config)."""
-    config = load_config(str(fixtures_dir / "open_chamber_config.yaml"))
-    fc = FluidControllerSimulation(serial_number="test")
-    return SelectorValveSystem(fc, config)
+    return _make_valve_system(fixtures_dir / "open_chamber_config.yaml")
 
 
 class TestSelectorValveSystemInit:

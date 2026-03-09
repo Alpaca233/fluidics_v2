@@ -187,12 +187,10 @@ class TestSequenceUtilities:
 
 class TestRegistryConsistency:
     def test_all_labels_have_types(self):
-        for type_key in SEQUENCE_TYPE_LABELS:
-            assert type_key in SEQUENCE_TYPES
+        assert SEQUENCE_TYPE_LABELS.keys() <= SEQUENCE_TYPES.keys()
 
     def test_all_types_have_labels(self):
-        for type_key in SEQUENCE_TYPES:
-            assert type_key in SEQUENCE_TYPE_LABELS
+        assert SEQUENCE_TYPES.keys() <= SEQUENCE_TYPE_LABELS.keys()
 
     def test_application_sequences_are_valid_types(self):
         for app, seq_types in APPLICATION_SEQUENCES.items():

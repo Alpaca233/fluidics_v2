@@ -1,4 +1,6 @@
 # tests/unit/test_convert_config.py
+import shutil
+
 import yaml
 
 from convert_config import convert_json_to_yaml
@@ -29,8 +31,6 @@ class TestConvertJsonToYaml:
 
     def test_default_output_path(self, fixtures_dir, tmp_path):
         """When yaml_path is None, output goes alongside the JSON file."""
-        # Copy JSON fixture to tmp so we don't pollute fixtures dir
-        import shutil
         src = fixtures_dir / "legacy_flow_cell_config.json"
         dst = tmp_path / "my_config.json"
         shutil.copy(src, dst)

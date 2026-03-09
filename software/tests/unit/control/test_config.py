@@ -1,6 +1,7 @@
 # tests/unit/control/test_config.py
+import json
+
 import pytest
-import yaml
 from pydantic import ValidationError
 
 from fluidics.control.config import (
@@ -9,6 +10,37 @@ from fluidics.control.config import (
     load_config,
     convert_legacy_config,
 )
+
+
+def _make_config_dict(**overrides):
+    """Build a minimal FluidicsConfig dict, with overrides applied on top."""
+    base = {
+        "config_version": "2.0",
+        "microcontroller": {"serial_number": "X"},
+        "syringe_pump": {
+            "serial_number": "X", "volume_ul": 1000,
+            "ports_allowed": [1], "waste_port": 1,
+            "extract_port": 1, "speed_code_limit": 10,
+        },
+        "reagent_selection": {
+            "selector_valves": {
+                "valve_ids": [0], "number_of_ports": {0: 10},
+                "tubing_fluid_amount_to_valve_ul": {0: 0},
+                "tubing_fluid_amount_ul": {"port_1": 100},
+            },
+            "common_tubing_fluid_amount_ul": 100,
+        },
+        "application": "Flow Cell",
+    }
+    # Apply top-level overrides
+    for key, value in overrides.items():
+        if "." in key:
+            # Support dotted keys like "syringe_pump.volume_ul"
+            section, field = key.split(".", 1)
+            base[section][field] = value
+        else:
+            base[key] = value
+    return base
 
 
 class TestFluidicsConfigLoading:
@@ -32,67 +64,16 @@ class TestFluidicsConfigLoading:
 
     def test_invalid_application_rejected(self):
         with pytest.raises(ValidationError):
-            FluidicsConfig(
-                config_version="2.0",
-                microcontroller={"serial_number": "X"},
-                syringe_pump={
-                    "serial_number": "X", "volume_ul": 1000,
-                    "ports_allowed": [1], "waste_port": 1,
-                    "extract_port": 1, "speed_code_limit": 10,
-                },
-                reagent_selection={
-                    "selector_valves": {
-                        "valve_ids": [0], "number_of_ports": {0: 10},
-                        "tubing_fluid_amount_to_valve_ul": {0: 0},
-                        "tubing_fluid_amount_ul": {"port_1": 100},
-                    },
-                    "common_tubing_fluid_amount_ul": 100,
-                },
-                application="Invalid",
-            )
+            FluidicsConfig(**_make_config_dict(application="Invalid"))
 
     def test_syringe_volume_must_be_positive(self):
         with pytest.raises(ValidationError, match="volume_ul"):
-            FluidicsConfig(
-                config_version="2.0",
-                microcontroller={"serial_number": "X"},
-                syringe_pump={
-                    "serial_number": "X", "volume_ul": 0,
-                    "ports_allowed": [1], "waste_port": 1,
-                    "extract_port": 1, "speed_code_limit": 10,
-                },
-                reagent_selection={
-                    "selector_valves": {
-                        "valve_ids": [0], "number_of_ports": {0: 10},
-                        "tubing_fluid_amount_to_valve_ul": {0: 0},
-                        "tubing_fluid_amount_ul": {"port_1": 100},
-                    },
-                    "common_tubing_fluid_amount_ul": 100,
-                },
-                application="Flow Cell",
-            )
+            FluidicsConfig(**_make_config_dict(**{"syringe_pump.volume_ul": 0}))
 
     def test_speed_code_limit_range(self):
         """speed_code_limit must be 0-40."""
         with pytest.raises(ValidationError, match="speed_code_limit"):
-            FluidicsConfig(
-                config_version="2.0",
-                microcontroller={"serial_number": "X"},
-                syringe_pump={
-                    "serial_number": "X", "volume_ul": 1000,
-                    "ports_allowed": [1], "waste_port": 1,
-                    "extract_port": 1, "speed_code_limit": 41,
-                },
-                reagent_selection={
-                    "selector_valves": {
-                        "valve_ids": [0], "number_of_ports": {0: 10},
-                        "tubing_fluid_amount_to_valve_ul": {0: 0},
-                        "tubing_fluid_amount_ul": {"port_1": 100},
-                    },
-                    "common_tubing_fluid_amount_ul": 100,
-                },
-                application="Flow Cell",
-            )
+            FluidicsConfig(**_make_config_dict(**{"syringe_pump.speed_code_limit": 41}))
 
 
 class TestSelectorValvesValidator:
@@ -128,7 +109,6 @@ class TestSelectorValvesValidator:
 class TestConvertLegacyConfig:
     def test_flow_cell_conversion(self, fixtures_dir):
         """Legacy MERFISH JSON converts to valid Flow Cell YAML config."""
-        import json
         with open(fixtures_dir / "legacy_flow_cell_config.json") as f:
             old = json.load(f)
 
@@ -146,7 +126,6 @@ class TestConvertLegacyConfig:
 
     def test_open_chamber_conversion(self, fixtures_dir):
         """Legacy Open Chamber JSON converts to valid config."""
-        import json
         with open(fixtures_dir / "legacy_open_chamber_config.json") as f:
             old = json.load(f)
 
@@ -160,7 +139,6 @@ class TestConvertLegacyConfig:
         assert config.temperature_controller is None
 
     def test_merfish_becomes_flow_cell(self, fixtures_dir):
-        import json
         with open(fixtures_dir / "legacy_flow_cell_config.json") as f:
             old = json.load(f)
         new = convert_legacy_config(old)

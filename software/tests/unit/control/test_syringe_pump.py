@@ -3,6 +3,20 @@ import pytest
 from fluidics.control.syringe_pump import SyringePump, SyringePumpSimulation
 
 
+def _make_sim_with_real_speed_code(speed_code_limit=10):
+    """Create a SyringePumpSimulation with SyringePump's flow_rate_to_speed_code bound.
+
+    SyringePump can't be instantiated without hardware, so we bind its
+    flow_rate_to_speed_code method onto a SyringePumpSimulation instance.
+    We must also set speed_code_limit manually since SyringePumpSimulation
+    discards that constructor parameter.
+    """
+    p = SyringePumpSimulation(sn=None, syringe_ul=5000, speed_code_limit=speed_code_limit, waste_port=1)
+    p.speed_code_limit = speed_code_limit
+    p.flow_rate_to_speed_code = SyringePump.flow_rate_to_speed_code.__get__(p)
+    return p
+
+
 class TestSpeedSecMapping:
     def test_mapping_length(self):
         assert len(SyringePump.SPEED_SEC_MAPPING) == 41  # speed codes 0-40
@@ -17,21 +31,9 @@ class TestSpeedSecMapping:
 
 
 class TestFlowRateToSpeedCode:
-    """Test the binary search algorithm from SyringePump.flow_rate_to_speed_code.
-
-    SyringePump can't be instantiated without hardware, so we bind its
-    flow_rate_to_speed_code method onto a SyringePumpSimulation instance.
-    We must also set speed_code_limit manually since SyringePumpSimulation
-    discards that constructor parameter.
-    """
-
     @pytest.fixture
     def pump_sim(self):
-        """Create a simulation pump with the real binary search algorithm bound."""
-        p = SyringePumpSimulation(sn=None, syringe_ul=5000, speed_code_limit=10, waste_port=1)
-        p.speed_code_limit = 10
-        p.flow_rate_to_speed_code = SyringePump.flow_rate_to_speed_code.__get__(p)
-        return p
+        return _make_sim_with_real_speed_code(speed_code_limit=10)
 
     def test_exact_speed_code_match(self, pump_sim):
         """When target time exactly matches a mapping entry, return that code."""
@@ -66,14 +68,11 @@ class TestFlowRateToSpeedCode:
         that formula (without the *1000 used in get_flow_rate).
         """
         pump_sim.speed_code_limit = 0
-        seen = set()
         mapping = SyringePump.SPEED_SEC_MAPPING
-        for i in range(len(mapping)):
-            # Rate that produces target_time == mapping[i]
-            rate = pump_sim.volume * 60 / mapping[i]
-            code = pump_sim.flow_rate_to_speed_code(rate)
-            seen.add(code)
-        # Every code should be reachable with its exact rate
+        seen = set()
+        for sec in mapping:
+            rate = pump_sim.volume * 60 / sec
+            seen.add(pump_sim.flow_rate_to_speed_code(rate))
         assert len(seen) == 41
 
 
@@ -93,9 +92,7 @@ class TestGetFlowRate:
         conventions (get_flow_rate divides by 1000 extra), so we test
         flow_rate_to_speed_code's self-consistency separately.
         """
-        p = SyringePumpSimulation(sn=None, syringe_ul=5000, speed_code_limit=0, waste_port=1)
-        p.speed_code_limit = 0
-        p.flow_rate_to_speed_code = SyringePump.flow_rate_to_speed_code.__get__(p)
+        p = _make_sim_with_real_speed_code(speed_code_limit=0)
         mapping = SyringePump.SPEED_SEC_MAPPING
         for code in range(41):
             # Rate that produces target_time == mapping[code]

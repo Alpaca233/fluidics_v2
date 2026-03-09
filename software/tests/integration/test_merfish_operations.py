@@ -2,7 +2,6 @@
 import pytest
 
 from fluidics.merfish_operations import MERFISHOperations
-from fluidics.experiment_worker import OperationError
 
 
 class TestProcessSequence:
