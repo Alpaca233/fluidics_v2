@@ -26,7 +26,7 @@ pio run -t upload      # Upload to Teensy 4.1
 
 ### Software
 
-Requires Python 3 with: PyQt5, pandas, matplotlib, pyserial, cobs, numpy.
+Requires Python 3 with: PyQt5, pandas, matplotlib, pyserial, cobs, numpy, pydantic, pyyaml.
 
 **1. Find serial numbers for connected devices:**
 
@@ -37,73 +37,78 @@ python list_controllers.py
 
 **2. Create a configuration file** based on the examples in `sample_config/`:
 
-- `MERFISH_config.json` — MERFISH flow cell setup
-- `open_chamber_config.json` — Open chamber setup
+- `MERFISH_config.yaml` — MERFISH flow cell setup
+- `open_chamber_config.yaml` — Open chamber setup
 
 Key fields to set:
 - `microcontroller.serial_number` — Teensy serial number
 - `syringe_pump.serial_number` — Syringe pump serial number
 - `syringe_pump.volume_ul` — Syringe volume (e.g. 2500 or 5000)
 - `syringe_pump.speed_code_limit` — Maximum speed code (lower = faster, range 1-40)
-- `selector_valves.valve_ids_allowed` — IDs of connected selector valves (e.g. `[0, 1, 2]`)
-- `selector_valves.number_of_ports` — Number of ports per valve
-- `selector_valves.reagent_name_mapping` — Port-to-reagent labels (shown in GUI)
-- `selector_valves.tubing_fluid_amount_to_valve_ul` — Tubing dead volume from selector valve to syringe pump
-- `selector_valves.tubing_fluid_amount_to_port_ul` — Tubing dead volume from reagent to selector valve port
-- `application` — `"MERFISH"` or `"Open Chamber"`
+- `reagent_selection.selector_valves.valve_ids` — IDs of connected selector valves (e.g. `[0, 1, 2]`)
+- `reagent_selection.selector_valves.number_of_ports` — Number of ports per valve
+- `reagent_selection.selector_valves.name_mapping` — Port-to-reagent labels (shown in GUI)
+- `reagent_selection.selector_valves.tubing_fluid_amount_to_valve_ul` — Tubing dead volume from selector valve to syringe pump
+- `reagent_selection.selector_valves.tubing_fluid_amount_ul` — Tubing dead volume from reagent to selector valve port
+- `application` — `"Flow Cell"` or `"Open Chamber"`
 
 Open chamber configs additionally require:
-- `chamber_volume_ul` — Chamber volume
-- `tubing_fluid_amount_sv_to_sp_ul` — Tubing volume: selector valve to syringe pump
-- `tubing_fluid_amount_sp_to_oc_ul` — Tubing volume: syringe pump to open chamber
+- `samples.chamber_volume_ul` — Chamber volume
+- `reagent_selection.common_tubing_fluid_amount_ul` — Common tubing volume
+- `sample_selection_inlet.common_tubing_fluid_amount_ul` — Tubing volume: syringe pump to open chamber
 
 **3. Launch the GUI:**
 
 ```bash
-python gui.py --config path/to/config.json
+python gui.py --config path/to/config.yaml
 ```
 
 Or run sequences from the command line:
 
 ```bash
-python run_sequences.py --path path/to/sequences.csv --config path/to/config.json
+python run_sequences.py --path path/to/sequences.yaml --config path/to/config.yaml
 ```
 
-Use `--simulation` to run without connected hardware.
+Use `--simulation` to run without connected hardware. Legacy CSV sequence files and JSON config files are also supported.
 
 ## Experiment Sequences
 
-Experiments are defined as CSV files with the following columns:
+Experiments are defined as YAML files. Each sequence has a `type` field and only the fields relevant to that type. Example:
 
-| Column | Description |
-|--------|-------------|
-| `sequence_name` | Operation to perform (see below) |
-| `fluidic_port` | Selector valve port number |
-| `flow_rate` | Flow rate in uL/min |
-| `volume` | Volume in uL |
-| `incubation_time` | Wait time in minutes after the operation |
-| `repeat` | Number of times to repeat this row |
-| `fill_tubing_with` | Port to refill tubing from after operation (0 = disable) |
-| `include` | 1 to include, 0 to skip |
+```yaml
+sequences:
+  - type: flow_reagent
+    fluidic_port: 2
+    flow_rate: 5000
+    volume: 2000
+    incubation_time: 3
+    fill_tubing_with: 25
 
-### MERFISH Sequence Names
+  - type: set_temperature
+    temperature: 50
+    include: false
+```
 
-| Name | Description |
-|------|-------------|
-| `Flow <name>` | Flow reagent from the specified port |
-| `Priming` | Prime all tubings with corresponding reagents |
-| `Clean Up` | Flush all tubings (typically with water) |
+All sequence types share these optional fields: `name` (custom label), `repeat` (default 1), `include` (default true), `incubation_time` (default 0).
 
-### Open Chamber Sequence Names
+### Flow Cell Sequence Types
 
-| Name | Description |
-|------|-------------|
-| `Add Reagent` | Dispense reagent into chamber (tubings already filled) |
-| `Clear Tubings and Add Reagent` | Clear previous liquid from tubings, then dispense reagent |
-| `Wash with Constant Flow` | Flow reagent while aspirating with disc pump |
-| `Priming` | Prime all tubings |
-| `Clean Up` | Flush all tubings and aspirate chamber |
-| `Set Temperature <value>` | Set temperature controller to target (e.g. `Set Temperature 50`) |
+| Type | Extra Fields | Description |
+|------|-------------|-------------|
+| `flow_reagent` | `fluidic_port`, `flow_rate`, `volume`, `fill_tubing_with` | Flow reagent from the specified port |
+| `priming` | `fluidic_port`, `flow_rate`, `volume` | Prime all tubings with corresponding reagents |
+| `clean_up` | `fluidic_port`, `flow_rate`, `volume` | Flush all tubings (typically with water) |
+
+### Open Chamber Sequence Types
+
+| Type | Extra Fields | Description |
+|------|-------------|-------------|
+| `add_reagent` | `fluidic_port`, `flow_rate`, `volume`, `fill_tubing_with` | Dispense reagent into chamber (tubings already filled) |
+| `clear_and_add_reagent` | `fluidic_port`, `flow_rate`, `volume`, `fill_tubing_with` | Clear previous liquid from tubings, then dispense reagent |
+| `wash_constant_flow` | `fluidic_port`, `flow_rate`, `volume`, `fill_tubing_with` | Flow reagent while aspirating with disc pump |
+| `priming` | `fluidic_port`, `flow_rate`, `volume` | Prime all tubings |
+| `clean_up` | `fluidic_port`, `flow_rate`, `volume` | Flush all tubings and aspirate chamber |
+| `set_temperature` | `temperature` | Set temperature controller to target |
 
 ## Communication Protocol
 

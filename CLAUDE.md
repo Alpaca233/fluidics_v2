@@ -27,12 +27,12 @@ Source files are in `firmware/` root (not `src/`), configured via `platformio.in
 ```bash
 cd software
 python gui.py                                          # Launch GUI
-python run_sequences.py --path <csv> --config <json>   # Run sequences from CLI
+python run_sequences.py --path <yaml> --config <yaml>  # Run sequences from CLI
 python list_controllers.py                             # Discover serial devices
-python run_sequences.py --path sample_sequences/merfish-experiment.csv --config sample_config/MERFISH_config.json --simulation  # Simulation mode (no hardware)
+python run_sequences.py --path sample_sequences/merfish-experiment.yaml --config sample_config/MERFISH_config.yaml --simulation  # Simulation mode (no hardware)
 ```
 
-**Python dependencies:** PyQt5, pandas, matplotlib, pyserial, cobs, numpy
+**Python dependencies:** PyQt5, pandas, matplotlib, pyserial, cobs, numpy, pydantic, pyyaml
 
 ### Tests
 
@@ -62,6 +62,7 @@ These must stay in sync. Same applies to `VALVE_POSITIONS`/`ValvesStates_t` and 
 - **`fluidics/control/temperature_controller.py`** — TCM temperature controller with CRC32 checksums; has simulation class
 - **`fluidics/control/disc_pump.py`** — Peristaltic disc pump wrapper
 - **`fluidics/control/_def.py`** — Shared constants (command IDs, valve positions, sensor params, PID limits)
+- **`fluidics/sequences.py`** — Sequence loading/saving/validation with pydantic discriminated union models
 - **`fluidics/merfish_operations.py`** — MERFISH experiment sequence logic
 - **`fluidics/open_chamber_operations.py`** — Open chamber experiment sequence logic
 - **`fluidics/experiment_worker.py`** — Threaded experiment execution with progress callbacks
@@ -74,10 +75,19 @@ These must stay in sync. Same applies to `VALVE_POSITIONS`/`ValvesStates_t` and 
 
 ### Experiment Flow
 
-1. Config JSON defines hardware serial numbers, valve IDs, reagent mappings
-2. CSV sequences define operations: `sequence_name, fluidic_port, flow_rate, volume, incubation_time, repeat, fill_tubing_with, include`
-3. `ExperimentWorker` iterates CSV rows, calling operation methods on `MERFISHOperations` or `OpenChamberOperations`
-4. Operations orchestrate syringe pump, selector valves, and controller commands
+1. Config YAML defines hardware serial numbers, valve IDs, reagent mappings (legacy JSON auto-converts)
+2. YAML sequences define operations as typed dicts with a `type` discriminator field (legacy CSV also supported)
+3. `ExperimentWorker` iterates the sequence list, calling operation methods on `MERFISHOperations` or `OpenChamberOperations`
+4. Operations dispatch on `sequence['type']` (snake_case strings like `flow_reagent`, `add_reagent`, `set_temperature`)
+
+### Sequence Models
+
+`fluidics/sequences.py` defines pydantic models using a discriminated union on the `type` field. Each sequence type has only the fields it needs:
+- **Fluidic types** (`flow_reagent`, `add_reagent`, `clear_and_add_reagent`, `wash_constant_flow`, `priming`, `clean_up`): `fluidic_port`, `flow_rate`, `volume`; some also have `fill_tubing_with`
+- **`set_temperature`**: `temperature` field only
+- **All types** share: `name` (optional label), `repeat`, `include`, `incubation_time`
+
+Per-application available types are defined in `APPLICATION_SEQUENCES` dict. Models use `extra='forbid'` to catch typos.
 
 ### Simulation Mode
 
@@ -87,6 +97,6 @@ All major hardware classes have `*Simulation` counterparts. Pass `--simulation` 
 
 - Firmware library dependency: `PacketSerial` for COBS encoding (declared in `platformio.ini`)
 - Syringe pump uses Tecan Cavro protocol via `fluidics/control/tecancavro/` — this is a vendored library
-- Config files live in `sample_config/`, sequence CSVs in `sample_sequences/`
+- Config files live in `sample_config/`, sequence files in `sample_sequences/` (YAML preferred, CSV supported for legacy)
 - Hardware pin assignments are all in `firmware/_defs.h`
-- The `application` field in config JSON (`"MERFISH"` or `"Open Chamber"`) selects which operations class to use
+- The `application` field in config (`"Flow Cell"` or `"Open Chamber"`) selects which operations class and available sequence types to use
