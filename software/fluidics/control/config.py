@@ -7,7 +7,7 @@ import os
 from typing import Dict, List, Literal, Optional
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- Pydantic Models ---
@@ -18,12 +18,12 @@ class MicrocontrollerConfig(BaseModel):
 
 class SyringePumpConfig(BaseModel):
     serial_number: str
-    volume_ul: int
+    volume_ul: int = Field(gt=0)
     ports_allowed: List[int]
     waste_port: int
     extract_port: int
     dispense_port: Optional[int] = None
-    speed_code_limit: int
+    speed_code_limit: int = Field(ge=0, le=40)
 
 
 class SelectorValvesConfig(BaseModel):
@@ -32,6 +32,24 @@ class SelectorValvesConfig(BaseModel):
     tubing_fluid_amount_to_valve_ul: Dict[int, int]
     name_mapping: Optional[Dict[str, str]] = None
     tubing_fluid_amount_ul: Dict[str, int]
+
+    @model_validator(mode='after')
+    def _check_valve_id_consistency(self):
+        ids = set(self.valve_ids)
+        for field_name in ('number_of_ports', 'tubing_fluid_amount_to_valve_ul'):
+            keys = set(getattr(self, field_name).keys())
+            if keys != ids:
+                missing = ids - keys
+                extra = keys - ids
+                parts = []
+                if missing:
+                    parts.append(f"missing {missing}")
+                if extra:
+                    parts.append(f"extra {extra}")
+                raise ValueError(
+                    f"{field_name} keys don't match valve_ids: {', '.join(parts)}"
+                )
+        return self
 
 
 class ReagentSelectionConfig(BaseModel):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Literal, Optional, Union, get_args
 
 import yaml
 import pandas as pd
@@ -82,15 +82,12 @@ SequenceListAdapter = TypeAdapter(list[Sequence])
 # --- Type registry and per-application sequence lists ---
 
 
-SEQUENCE_TYPES: dict[str, type[SequenceBase]] = {
-    "flow_reagent": FlowReagentSequence,
-    "add_reagent": AddReagentSequence,
-    "clear_and_add_reagent": ClearAndAddReagentSequence,
-    "wash_constant_flow": WashConstantFlowSequence,
-    "priming": PrimingSequence,
-    "clean_up": CleanUpSequence,
-    "set_temperature": SetTemperatureSequence,
-}
+# Derive type registry from the Sequence union so it stays in sync automatically.
+SEQUENCE_TYPES: dict[str, type[SequenceBase]] = {}
+for _cls in get_args(get_args(Sequence)[0]):
+    _type_field = _cls.model_fields["type"]
+    _type_key = get_args(_type_field.annotation)[0]
+    SEQUENCE_TYPES[_type_key] = _cls
 
 SEQUENCE_TYPE_LABELS: dict[str, str] = {
     "flow_reagent": "Flow Reagent",
