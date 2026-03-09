@@ -6,8 +6,8 @@ class MERFISHOperations():
         self.config = config
         self.sp = syringe_pump
         self.sv = selector_valves
-        self.extract_port = self.config['syringe_pump']['extract_port']
-        self.speed_code_limit = self.config['syringe_pump']['speed_code_limit']
+        self.extract_port = self.config.syringe_pump.extract_port
+        self.speed_code_limit = self.config.syringe_pump.speed_code_limit
 
     def process_sequence(self, sequence):
         print(sequence)
@@ -33,7 +33,7 @@ class MERFISHOperations():
             raise ValueError(f"Unknown sequence name: {sequence_name}")
 
     def _empty_syringe_pump_on_full(self, volume):
-        if self.sp.get_current_volume() + self.sp.get_chained_volume() + volume > 0.95 * self.config['syringe_pump']['volume_ul']:
+        if self.sp.get_current_volume() + self.sp.get_chained_volume() + volume > 0.95 * self.config.syringe_pump.volume_ul:
             try:
                 self.sp.dispense_to_waste()
                 self.sp.execute()
@@ -69,7 +69,7 @@ class MERFISHOperations():
 
     def priming_or_clean_up(self, port, flow_rate, volume, use_ports=None):
         """
-        Fill the tubings from reagents to selector valves with the corresponding reagents. Finally, fill the tubings before 
+        Fill the tubings from reagents to selector valves with the corresponding reagents. Finally, fill the tubings before
         syringe pump with {volume} of the reagent from {port}.
         This method should work for both priming and cleaning. For priming, use a wash buffer for {port}; for cleaning, use water
         for all ports.

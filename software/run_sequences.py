@@ -5,6 +5,7 @@ import time
 import threading
 import pandas as pd
 
+from fluidics.control.config import load_config
 from fluidics.control.controller import FluidControllerSimulation, FluidController
 from fluidics.control.syringe_pump import SyringePumpSimulation, SyringePump
 from fluidics.control.selector_valve import SelectorValveSystem
@@ -26,7 +27,7 @@ def parse_args():
     )
     parser.add_argument(
         '--config', default='config.json',
-        help='Path to configuration file'
+        help='Path to configuration file (JSON or YAML)'
     )
     parser.add_argument(
         '--simulation',
@@ -36,29 +37,25 @@ def parse_args():
     )
     return parser.parse_args()
 
-def load_config(config_path='./config.json'):
-    with open(config_path, 'r') as f:
-        return json.load(f)
-
 def initialize_hardware(simulation, config):
     if simulation:
-        controller = FluidControllerSimulation(config['microcontroller']['serial_number'])
+        controller = FluidControllerSimulation(config.microcontroller.serial_number)
         syringePump = SyringePumpSimulation(
-            sn=config['syringe_pump']['serial_number'],
-            syringe_ul=config['syringe_pump']['volume_ul'], 
-            speed_code_limit=config['syringe_pump']['speed_code_limit'],
+            sn=config.syringe_pump.serial_number,
+            syringe_ul=config.syringe_pump.volume_ul,
+            speed_code_limit=config.syringe_pump.speed_code_limit,
             waste_port=3)
-        if 'temperature_controller' in config and config['use_temperature_controller']:
-                temperatureController = TCMControllerSimulation()
+        if config.temperature_controller is not None:
+            temperatureController = TCMControllerSimulation()
     else:
-        controller = FluidController(config['microcontroller']['serial_number'])
+        controller = FluidController(config.microcontroller.serial_number)
         syringePump = SyringePump(
-            sn=config['syringe_pump']['serial_number'],
-            syringe_ul=config['syringe_pump']['volume_ul'], 
-            speed_code_limit=config['syringe_pump']['speed_code_limit'],
+            sn=config.syringe_pump.serial_number,
+            syringe_ul=config.syringe_pump.volume_ul,
+            speed_code_limit=config.syringe_pump.speed_code_limit,
             waste_port=3)
-        if 'temperature_controller' in config and config['temperature_controller']['use_temperature_controller']:
-                temperatureController = TCMController(config['temperature_controller']['serial_number'])
+        if config.temperature_controller is not None:
+            temperatureController = TCMController(config.temperature_controller.serial_number)
 
     controller.begin()
     controller.send_command(CMD_SET.CLEAR)
@@ -90,13 +87,13 @@ def main():
         controller, syringePump = initialize_hardware(args.simulation, config)
 
         selectorValveSystem = SelectorValveSystem(controller, config)
-        if config['application'] == "Open Chamber":
+        if config.application == "Open Chamber":
             discPump = DiscPump(controller)
 
         # Run experiment
-        if config['application'] == "MERFISH":
+        if config.application == "Flow Cell":
             experiment_ops = MERFISHOperations(config, syringePump, selectorValveSystem)
-        elif config['application'] == "Open Chamber":
+        elif config.application == "Open Chamber":
             experiment_ops = OpenChamberOperations(config, syringePump, selectorValveSystem, discPump)
 
         callbacks = {

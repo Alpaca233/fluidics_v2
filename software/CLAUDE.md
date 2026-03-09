@@ -1,0 +1,114 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What This Is
+
+Python control software for the Fluidics v2 microfluidics system. Provides a PyQt5 GUI and CLI for automated liquid handling experiments (Flow Cell, Open Chamber). Communicates with a Teensy 4.1 microcontroller over serial.
+
+## Commands
+
+```bash
+# GUI
+python gui.py
+
+# CLI experiment runner
+python run_sequences.py --path sample_sequences/merfish-experiment.csv --config sample_config/flow_cell_config.yaml
+python run_sequences.py --path sample_sequences/merfish-experiment.csv --config sample_config/flow_cell_config.yaml --simulation
+
+# Config conversion (legacy JSON → YAML v2.0)
+python convert_config.py sample_config/MERFISH_config.json
+
+# Device discovery
+python list_controllers.py
+
+# Hardware test scripts (require connected hardware, run from software/)
+python tests/startup.py
+python tests/demo.py
+```
+
+No standard test framework — tests are hardware-oriented scripts. Use `--simulation` for software-only testing.
+
+**Dependencies:** PyQt5, pandas, matplotlib, pyserial, cobs, numpy, pydantic, pyyaml
+
+## Architecture
+
+### Configuration System (v2.0)
+
+Config files use YAML format with pydantic validation (`fluidics/control/config.py`). Key types: `FluidicsConfig` (root), `ReagentSelectionConfig`, `SelectorValvesConfig`, etc.
+
+- `load_config(path)` handles both `.yaml` and `.json` files. If a `.json` is given, it auto-converts to `.yaml` v2.0 and loads that going forward.
+- `convert_config.py` is a standalone CLI tool for batch conversion.
+- `application` field: `"Flow Cell"` (formerly `"MERFISH"`) or `"Open Chamber"`
+
+**Tubing volume decomposition** — the old config stored total tubing distance per valve. The new config splits this:
+- `reagent_selection.common_tubing_fluid_amount_ul` — shared tubing from last valve to sample (= old valve 0's value for flow cell, or old `tubing_fluid_amount_sv_to_sp_ul` for open chamber)
+- `reagent_selection.selector_valves.tubing_fluid_amount_to_valve_ul` — per-valve delta above common
+- `SelectorValveSystem.get_tubing_fluid_amount_to_valve()` returns `common + per_valve`, so total volumes are unchanged
+
+**Open Chamber extra fields:**
+- `sample_selection_inlet.common_tubing_fluid_amount_ul` — tubing from syringe pump to chamber (was `tubing_fluid_amount_sp_to_oc_ul`)
+- `samples.chamber_volume_ul` — chamber volume (was top-level `chamber_volume_ul`)
+- `temperature_controller` — optional, omit section if not used
+
+### Serial Protocol
+
+Communicates with Teensy at 2,000,000 baud using COBS framing. Commands are 15-byte fixed-length arrays, responses are 30 bytes. The first 2 bytes are a UID counter, byte 3 is the command ID, remaining bytes are command-specific parameters packed as big-endian integers.
+
+`fluidics/control/_def.py` defines `CMD_SET`, `COMMAND_STATUS`, and `VALVE_POSITIONS` — these **must stay in sync** with `firmware/_defs.h` enums (`SerialCommands_t`, `CommandExecution_t`, `ValvesStates_t`).
+
+### Hardware Abstraction Layers
+
+Each hardware class has a `*Simulation` counterpart in the same file:
+
+| Class | Simulation | File |
+|---|---|---|
+| `FluidController` | `FluidControllerSimulation` | `fluidics/control/controller.py` |
+| `SyringePump` | `SyringePumpSimulation` | `fluidics/control/syringe_pump.py` |
+| `TCMController` | `TCMControllerSimulation` | `fluidics/control/temperature_controller.py` |
+
+`SelectorValveSystem` and `DiscPump` operate through `FluidController` commands (no separate simulation classes — they use the controller's simulation).
+
+### Syringe Pump Command Chaining
+
+The syringe pump uses a chain-based execution model:
+1. `reset_chain()` — clear the command buffer
+2. `extract(port, volume, speed_code)` / `dispense(port, volume, speed_code)` — queue commands
+3. `execute()` — send the chain and block until done
+
+Speed codes (0–40) map to stroke times via `SPEED_SEC_MAPPING`. Use `flow_rate_to_speed_code(ul_per_min)` to convert. `speed_code_limit` in config prevents dangerously fast operation. Higher speed code = slower flow.
+
+### Selector Valve Cascading
+
+`SelectorValveSystem` manages multiple rotary valves daisy-chained in series. Port addressing is linearized: ports 1–9 map to valve 0, ports 10–18 to valve 1, etc. The last port of each valve (except the final one) routes to the next valve in the chain. `open_port(port_index)` handles the routing automatically.
+
+### Experiment Execution Flow
+
+1. YAML config defines hardware serial numbers, valve IDs, reagent mappings, tubing volumes
+2. CSV sequences define operations: `sequence_name, fluidic_port, flow_rate, volume, incubation_time, repeat, fill_tubing_with, include`
+3. `config.application` (`"Flow Cell"` or `"Open Chamber"`) selects the operations class
+4. `ExperimentWorker` iterates included CSV rows (`include == 1`), calling `process_sequence()` on the operations class
+5. Worker runs in a separate thread with callback-based progress reporting and abort support via `threading.Event`
+
+### Operations Classes
+
+**`MERFISHOperations`** — syringe-pump-only flow cell system:
+- `Flow Reagent` — extract reagent through selector valve, optionally fill tubing with buffer afterward
+- `Priming` / `Clean Up` — prime all ports with their reagents, then fill tubing with wash buffer
+
+**`OpenChamberOperations`** — syringe pump + disc pump for open chamber:
+- `Add Reagent` / `Clear Tubings and Add Reagent` — push reagent into chamber, disc pump aspirates waste
+- `Wash with Constant Flow` — simultaneous syringe dispense + disc pump aspiration
+- `Set Temperature <N>` — set temperature controller target and wait for stabilization
+
+### GUI Structure
+
+`gui.py` is a single-file PyQt5 application (~1200 lines) with tabs for sequence editing, hardware control, sensor monitoring, and real-time plotting. It instantiates the same hardware classes and `ExperimentWorker` as the CLI.
+
+## Key Conventions
+
+- `fluidics/control/tecancavro/` is a vendored library for Tecan Cavro syringe pump protocol — avoid modifying
+- Config files in `sample_config/` (YAML), sequence CSVs in `sample_sequences/`
+- The `abort` pattern: hardware classes expose `abort()` / `reset_abort()` and check `is_aborted` before operations
+- `send_command_blocking()` = `send_command()` + `wait_for_completion()` (polls MCU status until not `IN_PROGRESS`)
+- `tests/startup.py` imports from `control.` not `fluidics.control.` — must be run from `software/` directory

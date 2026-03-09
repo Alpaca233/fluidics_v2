@@ -40,7 +40,7 @@ class ExperimentWorker:
             if seq['sequence_name'].startswith("Set Temperature"):
                 t = seq['volume'] / seq['flow_rate'] * 60
                 if seq['fill_tubing_with']:
-                    t += self.config['selector_valves']['tubing_fluid_amount_ul'] / seq['flow_rate'] * 60 + 1
+                    t += self.config.reagent_selection.common_tubing_fluid_amount_ul / seq['flow_rate'] * 60 + 1
                 if 'incubation_time' in seq and seq['incubation_time'] > 0:
                     t += seq['incubation_time'] * 60
                 t += 2      # Time for opening selector valve port

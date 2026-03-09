@@ -1,5 +1,6 @@
 from ._def import CMD_SET
 
+
 class SelectorValve():
     def __init__(self, fluid_controller, config, valve_id, initial_pos=1):
         self.fc = fluid_controller
@@ -7,8 +8,9 @@ class SelectorValve():
         self.position = initial_pos
         self.config = config
 
-        self.tubing_fluid_amount_ul = self.config['selector_valves']['tubing_fluid_amount_to_valve_ul'][str(valve_id)]
-        self.number_of_ports = self.config['selector_valves']['number_of_ports'][str(valve_id)]
+        sv = self.config.reagent_selection.selector_valves
+        self.tubing_fluid_amount_ul = sv.tubing_fluid_amount_to_valve_ul[valve_id]
+        self.number_of_ports = sv.number_of_ports[valve_id]
         self.fc.send_command(CMD_SET.INITIALIZE_ROTARY, valve_id, self.number_of_ports)
         self.open(self.position)
         print(f"Selector valve id = {valve_id} initialized.")
@@ -33,11 +35,13 @@ class SelectorValveSystem():
     def __init__(self, fluid_controller, config):
         self.fc = fluid_controller
         self.config = config
-        self.valves = [None] * len(self.config['selector_valves']['valve_ids_allowed'])
-        sv = self.config['selector_valves']['valve_ids_allowed']
+        rs = self.config.reagent_selection
+        sv_config = rs.selector_valves
+        self.common_tubing_fluid_amount_ul = rs.common_tubing_fluid_amount_ul
+        self.valves = [None] * len(sv_config.valve_ids)
         self.available_port_number = 0
-        for i, valve_id in enumerate(sv):
-            ports = self.config['selector_valves']['number_of_ports'][str(valve_id)]
+        for i, valve_id in enumerate(sv_config.valve_ids):
+            ports = sv_config.number_of_ports[valve_id]
             self.valves[i] = SelectorValve(self.fc, self.config, i, 1)
             self.available_port_number += (ports - 1)
         self.available_port_number += 1
@@ -46,13 +50,15 @@ class SelectorValveSystem():
     def port_to_reagent(self, port_index):
         if port_index > self.available_port_number:
             return None
-        else:
-            return self.config['selector_valves']['reagent_name_mapping']['port_' + str(port_index)]
+        name_mapping = self.config.reagent_selection.selector_valves.name_mapping
+        if name_mapping is None:
+            return None
+        return name_mapping.get('port_' + str(port_index))
 
     def open_port(self, port_index):
         if port_index > self.available_port_number:
             return
-            
+
         ports_processed = 0
         for valve in self.valves[:-1]:  # Process all valves except the last one
             ports_in_valve = valve.number_of_ports - 1
@@ -71,26 +77,31 @@ class SelectorValveSystem():
         return
 
     def get_tubing_fluid_amount_to_valve(self, port_index):
-        # Return the tubing fluid amount from selector valve to sample. Used for fill_tubing_with.
+        # Return the tubing fluid amount from selector valve to sample.
+        # = common_tubing + per-valve amount (so total volume matches old config)
         ports_processed = 0
         for i, valve in enumerate(self.valves[:-1]):
-            ports_in_valve = valve.number_of_ports - 1  # Subtract 1 because last port is for passing through
+            ports_in_valve = valve.number_of_ports - 1
             if port_index > (ports_processed + ports_in_valve):
                 ports_processed += ports_in_valve
             else:
-                return valve.tubing_fluid_amount_ul
+                return self.common_tubing_fluid_amount_ul + valve.tubing_fluid_amount_ul
 
-        # If we get here, it's in the last valve
-        return self.valves[-1].tubing_fluid_amount_ul
+        return self.common_tubing_fluid_amount_ul + self.valves[-1].tubing_fluid_amount_ul
 
     def get_tubing_fluid_amount_to_port(self, port_index):
-        # Return the tubing fluid amount from reagent to selector valve port. Used for priming and cleaning up.
-        return self.config['selector_valves']['tubing_fluid_amount_to_port_ul']['port_' + str(port_index)]
+        # Return the tubing fluid amount from reagent to selector valve port.
+        return self.config.reagent_selection.selector_valves.tubing_fluid_amount_ul.get(
+            'port_' + str(port_index))
 
     def get_port_names(self):
         names = []
+        name_mapping = self.config.reagent_selection.selector_valves.name_mapping
         for i in range(1, self.available_port_number + 1):
-            names.append('Port ' + str(i) + ': ' + self.config['selector_valves']['reagent_name_mapping']['port_' + str(i)])
+            name = ''
+            if name_mapping is not None:
+                name = name_mapping.get('port_' + str(i), '')
+            names.append('Port ' + str(i) + ': ' + name)
         return names
 
     def get_current_port(self):
