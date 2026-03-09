@@ -17,25 +17,25 @@ class TestSpeedSecMapping:
 
 
 class TestFlowRateToSpeedCode:
-    """Test the binary search algorithm using a real (non-simulated) pump's method.
+    """Test the binary search algorithm from SyringePump.flow_rate_to_speed_code.
 
-    We can't instantiate SyringePump without hardware, so we test the algorithm
-    by calling the method on a SyringePumpSimulation with volume/speed_code_limit
-    patched, or by reimplementing the method call with known parameters.
+    SyringePump can't be instantiated without hardware, so we bind its
+    flow_rate_to_speed_code method onto a SyringePumpSimulation instance.
+    We must also set speed_code_limit manually since SyringePumpSimulation
+    discards that constructor parameter.
     """
 
     @pytest.fixture
     def pump_sim(self):
-        """Create a simulation pump that we can patch for testing."""
+        """Create a simulation pump with the real binary search algorithm bound."""
         p = SyringePumpSimulation(sn=None, syringe_ul=5000, speed_code_limit=10, waste_port=1)
-        # Override flow_rate_to_speed_code with the real algorithm
         p.speed_code_limit = 10
         p.flow_rate_to_speed_code = SyringePump.flow_rate_to_speed_code.__get__(p)
         return p
 
     def test_exact_speed_code_match(self, pump_sim):
         """When target time exactly matches a mapping entry, return that code."""
-        # speed code 0: 1.25 sec -> flow_rate = 5000*60/1250 = 240000 ul/min
+        # speed code 0: 1.25 sec -> flow_rate = 5000*60/1.25 = 240000 ul/min
         # speed code 12: 5.00 sec -> flow_rate = 5000*60/5000 = 60000 ul/min
         code = pump_sim.flow_rate_to_speed_code(60000)
         # target_time = 5000*60/60000 = 5.0, matches SPEED_SEC_MAPPING[12]

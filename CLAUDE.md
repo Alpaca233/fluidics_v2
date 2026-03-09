@@ -38,11 +38,15 @@ python run_sequences.py --path sample_sequences/merfish-experiment.yaml --config
 
 ```bash
 cd software
-python tests/startup.py    # Initialization/control loop test
-python tests/demo.py       # Interactive hardware demo
+python -m pytest                       # Run all unit + integration tests
+python -m pytest tests/unit            # Unit tests only (fast, no hardware)
+python -m pytest tests/integration     # Integration tests (uses simulation classes)
+python -m pytest -v                    # Verbose output
+python tests/hardware/startup.py       # Hardware: initialization/control loop test
+python tests/hardware/demo.py          # Hardware: interactive demo
 ```
 
-Tests are hardware-oriented scripts, not a standard test framework. Use `--simulation` flag on `run_sequences.py` for software-only testing.
+Uses pytest. Hardware test scripts in `tests/hardware/` require connected devices and are excluded from the default test run.
 
 ## Architecture
 

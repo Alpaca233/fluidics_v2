@@ -117,4 +117,4 @@ Speed codes (0–40) map to stroke times via `SPEED_SEC_MAPPING`. Use `flow_rate
 - Config files in `sample_config/` (YAML), sequence files in `sample_sequences/` (YAML preferred, CSV supported for legacy)
 - The `abort` pattern: hardware classes expose `abort()` / `reset_abort()` and check `is_aborted` before operations
 - `send_command_blocking()` = `send_command()` + `wait_for_completion()` (polls MCU status until not `IN_PROGRESS`)
-- `tests/startup.py` imports from `control.` not `fluidics.control.` — must be run from `software/` directory
+- `tests/hardware/startup.py` imports from `control.` not `fluidics.control.` — must be run from `software/` directory

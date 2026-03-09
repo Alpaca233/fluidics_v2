@@ -42,8 +42,9 @@ class TestUintToBytes:
         assert result == [np.uint8(255), np.uint8(255)]
 
     def test_overflow_raises(self):
-        # Note: exact powers of 2 (like 256) pass the log2 check due to edge case.
-        # 257 reliably triggers the overflow assertion.
+        # Note: uint_to_bytes has a bug where exact powers of 2 like 256 pass
+        # the log2 overflow check despite not fitting in n_bytes. We use 257
+        # to reliably trigger the overflow assertion.
         with pytest.raises(AssertionError, match="Overflow"):
             uint_to_bytes(257, 1)
 

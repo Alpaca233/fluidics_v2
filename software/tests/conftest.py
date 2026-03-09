@@ -18,7 +18,8 @@ def _fast_clock(monkeypatch):
 
     sleep() advances the fake clock instead of blocking.
     time() returns the fake clock value, so timeouts expire immediately.
-    Event.wait() returns immediately (used by DiscPump.aspirate).
+    Event.wait() advances the fake clock by the timeout instead of blocking
+    (used by DiscPump.aspirate).
 
     Must patch both the time module AND each module that did
     'from time import sleep/time' (since those hold a direct reference).
