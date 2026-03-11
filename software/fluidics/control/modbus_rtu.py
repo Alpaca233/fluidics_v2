@@ -124,15 +124,23 @@ class ModbusRTUClient:
             self._baudrate = baudrate
         if self._port is None:
             raise ModbusError("No serial port specified")
-        self._serial = serial.Serial(
-            self._port, baudrate=self._baudrate, timeout=self._timeout
-        )
+        if self._serial is not None:
+            self._serial.close()
+            self._serial = None
+        try:
+            self._serial = serial.Serial(
+                self._port, baudrate=self._baudrate, timeout=self._timeout
+            )
+        except (serial.SerialException, OSError) as e:
+            raise ModbusError(str(e)) from e
         logger.info(f"Modbus RTU connected: {self._port}")
 
     def disconnect(self):
         if self._serial is not None:
-            self._serial.close()
-            self._serial = None
+            try:
+                self._serial.close()
+            finally:
+                self._serial = None
             logger.info("Modbus RTU disconnected")
 
     def _require_connected(self):

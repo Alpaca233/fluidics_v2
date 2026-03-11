@@ -578,7 +578,14 @@ class ServoMotor:
     def jog(self, velocity_mm_s: float, axis: str | None = None):
         name, config, sid = self._resolve_axis(axis)
 
+        if velocity_mm_s == 0.0:
+            raise ValueError("Jog velocity must not be zero")
+
         if abs(velocity_mm_s) > config.max_velocity:
+            logger.warning(
+                "Jog velocity %.1f mm/s exceeds max %.1f mm/s, clamping",
+                velocity_mm_s, config.max_velocity,
+            )
             velocity_mm_s = config.max_velocity * (1 if velocity_mm_s > 0 else -1)
 
         velocity_corrected = velocity_mm_s * config.velocity_polarity
@@ -601,12 +608,24 @@ class ServoMotor:
         self._write_control_word(sid, ControlWordBits.CMD_ENABLE_OPERATION | ControlWordBits.HALT)
 
         if wait:
+            stop_timeout = 5.0
             start = time.time()
-            while time.time() - start < 5.0:
+            stopped = False
+            while time.time() - start < stop_timeout:
+                if self.is_aborted:
+                    raise RuntimeError("Operation aborted")
+                status_word = self._read_status_word(sid)
+                if status_word & StatusWordBits.FAULT:
+                    error = self._client.read_register(sid, Reg.ERROR_CODE)
+                    raise RuntimeError(f"Motor fault during stop: error 0x{error:04X}")
                 velocity = self._client.read_register_32bit(sid, Reg.VELOCITY_ACTUAL_VALUE, signed=True)
                 if abs(velocity) < 10:
+                    stopped = True
                     break
                 time.sleep(POLL_INTERVAL)
+
+            if not stopped:
+                raise TimeoutError(f"Timeout waiting for motor to stop ({stop_timeout}s)")
 
             final_pos = self._client.read_register_32bit(sid, Reg.POSITION_ACTUAL_VALUE, signed=True)
             self._client.write_register_32bit(sid, Reg.TARGET_POSITION, final_pos, signed=True)
@@ -680,7 +699,7 @@ class ServoMotor:
                 try:
                     self.quick_stop(name)
                 except Exception:
-                    pass
+                    logger.error("Failed to quick-stop axis %s during abort", name, exc_info=True)
 
     def reset_abort(self):
         self.is_aborted = False
