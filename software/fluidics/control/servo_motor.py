@@ -282,7 +282,7 @@ class AxisConfig:
 # --- Default Configs ---
 
 DEFAULT_AXIS_CONFIGS: dict[str, AxisConfig] = {
-    "Z4": AxisConfig(
+    "Z": AxisConfig(
         slave_id=4,
         encoder_resolution=131072,
         ball_screw_lead=10.0,

@@ -13,9 +13,9 @@ from fluidics.control.servo_motor import (
 
 
 class TestAxisConfig:
-    def test_z4_config_exists(self):
-        assert "Z4" in DEFAULT_AXIS_CONFIGS
-        config = DEFAULT_AXIS_CONFIGS["Z4"]
+    def test_z_config_exists(self):
+        assert "Z" in DEFAULT_AXIS_CONFIGS
+        config = DEFAULT_AXIS_CONFIGS["Z"]
         assert config.slave_id == 4
         assert config.encoder_resolution == 131072
         assert config.has_brake is True
