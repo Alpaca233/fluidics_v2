@@ -45,7 +45,13 @@ def initialize_hardware(simulation, config):
             speed_code_limit=config.syringe_pump.speed_code_limit,
             waste_port=config.syringe_pump.waste_port)
         if config.temperature_controller is not None:
-            temperatureController = TCMControllerSimulation()
+            tc_cfg = config.temperature_controller
+            temperatureController = TCMControllerSimulation(
+                sn=tc_cfg.serial_number,
+                channels=tc_cfg.channels,
+                tolerance_celsius=tc_cfg.tolerance_celsius,
+                stabilization_timeout_seconds=tc_cfg.stabilization_timeout_seconds,
+            )
     else:
         controller = FluidController(config.microcontroller.serial_number)
         syringePump = SyringePump(
@@ -54,7 +60,13 @@ def initialize_hardware(simulation, config):
             speed_code_limit=config.syringe_pump.speed_code_limit,
             waste_port=config.syringe_pump.waste_port)
         if config.temperature_controller is not None:
-            temperatureController = TCMController(config.temperature_controller.serial_number)
+            tc_cfg = config.temperature_controller
+            temperatureController = TCMController(
+                sn=tc_cfg.serial_number,
+                channels=tc_cfg.channels,
+                tolerance_celsius=tc_cfg.tolerance_celsius,
+                stabilization_timeout_seconds=tc_cfg.stabilization_timeout_seconds,
+            )
 
     controller.begin()
     controller.send_command(CMD_SET.CLEAR)
@@ -77,6 +89,7 @@ def main():
     args = parse_args()
 
     syringePump = None
+    temperatureController = None
     thread = None
 
     try:
@@ -94,7 +107,7 @@ def main():
 
         # Run experiment
         if config.application == "Flow Cell":
-            experiment_ops = MERFISHOperations(config, syringePump, selectorValveSystem)
+            experiment_ops = MERFISHOperations(config, syringePump, selectorValveSystem, temperatureController)
         elif config.application == "Open Chamber":
             experiment_ops = OpenChamberOperations(config, syringePump, selectorValveSystem, discPump, temperatureController)
         else:
@@ -122,6 +135,8 @@ def main():
         if syringePump is not None:
             syringePump.reset_abort()
             syringePump.close()
+        if temperatureController is not None:
+            temperatureController.close()
 
 if __name__ == '__main__':
     main()
